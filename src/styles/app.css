@@ -123,6 +123,10 @@ button {
   display: flex;
   flex-direction: column;
   height: 100dvh;
+  /* `color` is inherited as a computed value, so it has to be re-declared
+     here — the night variables live on this element, and text that only
+     inherited from <body> would keep the daytime ink. */
+  color: var(--ink);
   background:
     radial-gradient(120% 80% at 50% -10%, rgba(255, 250, 238, 0.55), transparent 60%),
     var(--paper);
@@ -946,21 +950,15 @@ input[type='range'] {
   display: none;
 }
 
+/* Below this width there is no room for three columns, so the table goes to
+   the top and the panels stack beneath it. Nothing is ever hidden: the
+   dispatch controls move into the sticky bar rather than disappearing. */
 @media (max-width: 1120px) {
-  .layout {
-    grid-template-columns: minmax(250px, 300px) minmax(0, 1fr);
-  }
-  .rail--right {
-    display: none;
-  }
-  .rail--right.rail--merged {
-    display: flex;
-  }
-}
-
-@media (max-width: 880px) {
   :root {
     --nav-h: 54px;
+  }
+  .hide-on-mobile-dispatch {
+    display: none;
   }
   .layout {
     display: flex;
@@ -1028,6 +1026,30 @@ input[type='range'] {
   }
   .legend ul {
     gap: 6px;
+  }
+}
+
+/* Tablets have the table across the top and the two panels side by side
+   beneath it, rather than one very wide column. */
+@media (min-width: 721px) and (max-width: 1120px) {
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-content: start;
+    overflow-y: auto;
+  }
+  .stage {
+    grid-column: 1 / -1;
+    order: -1;
+    height: min(46dvh, 480px);
+  }
+  .rail--left {
+    border-bottom: 0;
+    border-right: 1px solid var(--line);
+    padding-bottom: 96px;
+  }
+  .wordmark span {
+    display: inline;
   }
 }
 

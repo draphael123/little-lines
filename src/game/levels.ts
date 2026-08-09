@@ -18,20 +18,22 @@ export const LEVELS: LevelDef[] = [
     brief:
       'Flat pasture, a clear morning and nothing in the way. Lay a length of track from the depot to the mill and set the little engine running.',
     kinds: [
-      '........',
+      'f.......',
       '..f.....',
       '........',
       '........',
       '.....f..',
-      '........',
+      '...f....',
     ],
+    // Gentle relief in the corners so the survey reads as carved ground; the
+    // corridor the line actually runs along stays at table height.
     heights: [
+      '11100011',
+      '01100011',
       '00000000',
       '00000000',
-      '00000000',
-      '00000000',
-      '00000000',
-      '00000000',
+      '00001110',
+      '01111100',
     ],
     depot: { x: 0, z: 3 },
     destination: { x: 7, z: 2 },

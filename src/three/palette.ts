@@ -69,15 +69,19 @@ export const DAY: SceneMood = {
   waterRoughness: 0.14,
 }
 
+/**
+ * Night has to stay readable: a low blue moon plus a generous hemisphere, so
+ * the carved ground still reads as ground while the lit windows do the work.
+ */
 export const NIGHT: SceneMood = {
-  background: '#191d26',
-  fog: '#141821',
-  fogDensity: 0.038,
-  sun: { colour: '#9fb6d6', intensity: 0.42, position: [-6, 9, -5] },
-  fill: { colour: '#2b3a52', intensity: 0.3 },
-  hemi: { sky: '#2c3a4d', ground: '#1a1712', intensity: 0.3 },
+  background: '#1d2330',
+  fog: '#181d28',
+  fogDensity: 0.03,
+  sun: { colour: '#b3c8e6', intensity: 1.15, position: [-6, 9, -5] },
+  fill: { colour: '#48608a', intensity: 0.7 },
+  hemi: { sky: '#5b7a9e', ground: '#2b241b', intensity: 1 },
   lampIntensity: 1,
-  waterColour: '#25384b',
+  waterColour: '#2c4459',
   waterRoughness: 0.08,
 }
 

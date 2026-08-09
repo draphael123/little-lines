@@ -45,8 +45,11 @@ function TilePlate({
   at,
   colour,
   opacity = 0.85,
-  inner = 0.36,
-  outer = 0.46,
+  inner = 0.3,
+  outer = 0.4,
+  /** A square outline follows the tile edges; a disc marks a place. */
+  square = false,
+  lift = 0.012,
 }: {
   world: World
   at: Coord
@@ -54,15 +57,17 @@ function TilePlate({
   opacity?: number
   inner?: number
   outer?: number
+  square?: boolean
+  lift?: number
 }) {
   const [x, y, z] = tileWorld(world, at)
   return (
     <mesh
-      position={[x, y + 0.012, z]}
-      rotation={[-Math.PI / 2, 0, 0]}
+      position={[x, y + lift, z]}
+      rotation={[-Math.PI / 2, 0, square ? Math.PI / 4 : 0]}
       raycast={() => null}
     >
-      <ringGeometry args={[inner, outer, 4, 1]} />
+      <ringGeometry args={[inner, outer, square ? 4 : 32, 1]} />
       <meshBasicMaterial color={colour} transparent opacity={opacity} />
     </mesh>
   )
@@ -141,10 +146,12 @@ export function Markers({
         <TilePlate
           world={world}
           at={hovered}
-          colour={hoverTone === 'bad' ? PALETTE.signal : hoverTone === 'good' ? '#e8efdf' : '#d8d2c2'}
-          opacity={hoverTone === 'bad' ? 0.7 : 0.9}
-          inner={0.4}
-          outer={0.5}
+          colour={hoverTone === 'bad' ? PALETTE.signal : hoverTone === 'good' ? '#f2f7ea' : '#e0dacb'}
+          opacity={hoverTone === 'bad' ? 0.8 : 0.95}
+          inner={0.62}
+          outer={0.71}
+          square
+          lift={0.02}
         />
       )}
       {hint && <HintRing world={world} at={hint} />}

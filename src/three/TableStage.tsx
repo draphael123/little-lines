@@ -3,7 +3,7 @@ import { Canvas } from '@react-three/fiber'
 import { ACESFilmicToneMapping, PCFSoftShadowMap } from 'three'
 import type { World } from '../game/types'
 import { SceneRoot } from './SceneRoot'
-import { cameraGoal } from './viewpoints'
+import { FOV, cameraGoal } from './viewpoints'
 import { detectWebGL } from './webgl'
 
 /**
@@ -22,7 +22,7 @@ export function TableStage({ world }: { world: World }) {
       <Canvas
         shadows={{ type: PCFSoftShadowMap }}
         dpr={[1, 1.85]}
-        camera={{ position: cameraGoal(world, 'home'), fov: 34, near: 0.1, far: 220 }}
+        camera={{ position: cameraGoal(world, 'home'), fov: FOV, near: 0.1, far: 400 }}
         gl={{ antialias: true, powerPreference: 'high-performance' }}
         onCreated={({ gl }) => {
           gl.toneMapping = ACESFilmicToneMapping

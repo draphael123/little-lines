@@ -4,8 +4,13 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { Vector3 } from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import type { World } from '../game/types'
-import { tableSize } from './geometry'
-import { cameraGoal, type CameraPreset } from './viewpoints'
+import {
+  LOOK_AT,
+  cameraGoal,
+  fitDistance,
+  worldSpan,
+  type CameraPreset,
+} from './viewpoints'
 
 interface CameraRigProps {
   world: World
@@ -17,28 +22,36 @@ interface CameraRigProps {
 export function CameraRig({ world, preset, nonce }: CameraRigProps) {
   const controls = useRef<OrbitControlsImpl>(null)
   const camera = useThree((s) => s.camera)
+  const size = useThree((s) => s.size)
+  const aspect = size.width / Math.max(1, size.height)
   const goal = useRef<Vector3 | null>(null)
-  const [w, d] = tableSize(world)
-  const reach = Math.max(w, d)
+  /** Set once the player arranges their own view, so a resize leaves it alone. */
+  const arranged = useRef(false)
 
+  const span = worldSpan(world)
+  const reach = fitDistance(span, aspect)
+
+  // A viewpoint button, a new nonce or a new table re-frames the layout.
   useEffect(() => {
-    goal.current = new Vector3(...cameraGoal(world, preset))
+    goal.current = new Vector3(...cameraGoal(world, preset, aspect))
+    arranged.current = false
+    // aspect is deliberately excluded: resizing should not fight a chosen view
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [world, preset, nonce])
 
-  // A fresh world should start from the home view rather than wherever the
-  // last table left the camera.
+  // The stage can be measured wrongly on the very first paint, and it changes
+  // shape whenever the window does. Re-fit the distance while the view is
+  // still the one we chose for the player.
   useEffect(() => {
-    camera.position.set(...cameraGoal(world, 'home'))
-    controls.current?.target.set(0, 0, 0)
-    controls.current?.update()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [world.w, world.h])
+    if (arranged.current) return
+    goal.current = new Vector3(...cameraGoal(world, preset, aspect))
+  }, [aspect, world, preset])
 
   useFrame(() => {
     const target = goal.current
     if (!target) return
-    camera.position.lerp(target, 0.09)
-    controls.current?.target.lerp(new Vector3(0, 0, 0), 0.09)
+    camera.position.lerp(target, 0.1)
+    controls.current?.target.lerp(new Vector3(...LOOK_AT), 0.1)
     controls.current?.update()
     if (camera.position.distanceTo(target) < 0.05) goal.current = null
   })
@@ -50,12 +63,13 @@ export function CameraRig({ world, preset, nonce }: CameraRigProps) {
       enablePan
       enableDamping
       dampingFactor={0.08}
-      minDistance={reach * 0.32}
-      maxDistance={reach * 2.1}
+      minDistance={reach * 0.24}
+      maxDistance={reach * 2.2}
       maxPolarAngle={Math.PI * 0.47}
       minPolarAngle={0.12}
       onStart={() => {
         goal.current = null
+        arranged.current = true
       }}
     />
   )

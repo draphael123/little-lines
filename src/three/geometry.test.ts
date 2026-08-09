@@ -18,6 +18,7 @@ import {
   tileWorld,
   type Vec3,
 } from './geometry'
+import { FOV, LOOK_AT, cameraGoal, fitDistance, worldSpan } from './viewpoints'
 
 const path = (tiles: Array<[number, number]>): Coord[] => tiles.map(([x, z]) => ({ x, z }))
 
@@ -267,6 +268,59 @@ describe('running trains', () => {
   it('offers three sensible speeds', () => {
     expect(SPEED_UNITS.slow).toBeLessThan(SPEED_UNITS.normal)
     expect(SPEED_UNITS.normal).toBeLessThan(SPEED_UNITS.fast)
+  })
+})
+
+describe('framing the table', () => {
+  const small = createWorld(12, 10)
+  const grand = createWorld(24, 17)
+
+  it('counts the timber frame as part of what has to fit', () => {
+    expect(worldSpan(small)).toBeGreaterThan(Math.hypot(12, 10))
+  })
+
+  it('stands far enough back that the full width fits at any aspect', () => {
+    for (const aspect of [0.55, 0.93, 1.35, 2.4]) {
+      const span = worldSpan(small)
+      const distance = fitDistance(span, aspect)
+      const vertical = (FOV * Math.PI) / 180
+      const horizontal = 2 * Math.atan(Math.tan(vertical / 2) * aspect)
+      expect(2 * distance * Math.tan(horizontal / 2)).toBeGreaterThanOrEqual(span)
+      // the vertical allowance accounts for depth foreshortening, so it only
+      // has to clear the table's own footprint rather than its diagonal
+      expect(2 * distance * Math.tan(vertical / 2)).toBeGreaterThanOrEqual(span * 0.8)
+    }
+  })
+
+  it('stands further back for a tall narrow stage than a wide one', () => {
+    const span = worldSpan(small)
+    expect(fitDistance(span, 0.6)).toBeGreaterThan(fitDistance(span, 1.8))
+  })
+
+  it('survives a viewport measured as zero on the first paint', () => {
+    expect(Number.isFinite(fitDistance(worldSpan(small), 0))).toBe(true)
+    expect(Number.isFinite(fitDistance(worldSpan(small), Number.NaN))).toBe(true)
+  })
+
+  it('scales with the table so a grand layout is not cropped', () => {
+    expect(fitDistance(worldSpan(grand), 1.35)).toBeGreaterThan(
+      fitDistance(worldSpan(small), 1.35),
+    )
+  })
+
+  it('puts the three viewpoints at the same distance on opposite sides', () => {
+    const home = cameraGoal(small, 'home', 1.35)
+    const west = cameraGoal(small, 'west', 1.35)
+    const east = cameraGoal(small, 'east', 1.35)
+    const from = (p: readonly number[]) =>
+      Math.hypot(p[0] - LOOK_AT[0], p[1] - LOOK_AT[1], p[2] - LOOK_AT[2])
+    expect(from(home)).toBeCloseTo(from(west), 5)
+    expect(from(west)).toBeCloseTo(from(east), 5)
+    expect(west[0]).toBeLessThan(0)
+    expect(east[0]).toBeGreaterThan(0)
+    expect(home[0]).toBeCloseTo(0, 6)
+    // all three look down on the table rather than up at it
+    for (const p of [home, west, east]) expect(p[1]).toBeGreaterThan(0)
   })
 })
 

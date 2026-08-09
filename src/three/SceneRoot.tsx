@@ -32,6 +32,12 @@ export function SceneRoot() {
   const level = useMemo(() => resolveLevel(levelId), [levelId])
   const world = mode === 'puzzle' ? worldForLevel(level) : free.world
   const mood = moodFor(night)
+  // Lighting and shadows have to grow with the table, or a grand layout ends
+  // up with the sun inside it and half the survey outside the shadow frustum.
+  const span = Math.hypot(world.w, world.h)
+  const lightScale = Math.max(1, span / 10)
+  const shadowHalf = span * 0.8
+  const fogDensity = mood.fogDensity * (10 / Math.max(10, span))
 
   const lines = useMemo<RailLine[]>(
     () => (mode === 'puzzle' ? (route.length >= 1 ? [{ id: 'campaign', tiles: route }] : []) : free.lines),
@@ -63,25 +69,33 @@ export function SceneRoot() {
   return (
     <>
       <color attach="background" args={[mood.background]} />
-      <fogExp2 attach="fog" args={[mood.fog, mood.fogDensity]} />
+      <fogExp2 attach="fog" args={[mood.fog, fogDensity]} />
 
       <hemisphereLight args={[mood.hemi.sky, mood.hemi.ground, mood.hemi.intensity]} />
       <directionalLight
-        position={mood.sun.position}
+        position={[
+          mood.sun.position[0] * lightScale,
+          mood.sun.position[1] * lightScale,
+          mood.sun.position[2] * lightScale,
+        ]}
         intensity={mood.sun.intensity}
         color={mood.sun.colour}
         castShadow
         shadow-mapSize={[2048, 2048]}
         shadow-bias={-0.0005}
         shadow-normalBias={0.02}
-        shadow-camera-left={-18}
-        shadow-camera-right={18}
-        shadow-camera-top={18}
-        shadow-camera-bottom={-18}
+        shadow-camera-left={-shadowHalf}
+        shadow-camera-right={shadowHalf}
+        shadow-camera-top={shadowHalf}
+        shadow-camera-bottom={-shadowHalf}
         shadow-camera-near={0.5}
-        shadow-camera-far={60}
+        shadow-camera-far={shadowHalf * 6}
       />
-      <directionalLight position={[-6, 5, -7]} intensity={mood.fill.intensity} color={mood.fill.colour} />
+      <directionalLight
+        position={[-6 * lightScale, 5 * lightScale, -7 * lightScale]}
+        intensity={mood.fill.intensity}
+        color={mood.fill.colour}
+      />
 
       <Table world={world} />
       <Terrain world={world} onPick={handlePick} onHover={handleHover} />

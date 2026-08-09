@@ -108,7 +108,8 @@ describe('the WebGL fallback', () => {
 describe('the accessible grid plays the whole game', () => {
   it('describes every tile, its ground and its elevation', () => {
     render(<App />)
-    expect(tile(0, 0)).toHaveAccessibleName(/meadow, level 0/i)
+    expect(tile(2, 3)).toHaveAccessibleName(/meadow, level 0/i)
+    expect(tile(0, 0)).toHaveAccessibleName(/pines, level 1/i)
   })
 
   it('refuses a first length of track anywhere but the depot', async () => {
