@@ -1022,3 +1022,181 @@ input[type='range'] {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* ============================================================= the ladder */
+
+/* Sits in the top bar between the figures and the transport controls. */
+.ladder {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 190px;
+  max-width: 240px;
+}
+.ladder__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.ladder__head b {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.ladder__head i {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ladder__track {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.09);
+  overflow: hidden;
+}
+.ladder__track span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #d19a45, var(--accent));
+  transition: width 0.5s ease;
+}
+
+/* ========================================================== what to do next */
+
+/* Under the town list, above the dock: the one thing to do right now. */
+.objective {
+  position: absolute;
+  left: var(--gap);
+  bottom: calc(var(--gap) + 74px + var(--gap));
+  width: 306px;
+  padding: 13px 15px 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  border-left: 2px solid var(--accent);
+}
+.objective--idle {
+  border-left-color: var(--info);
+}
+.objective__tag {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.objective--idle .objective__tag {
+  color: var(--info);
+}
+.objective b {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+}
+.objective p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+.objective .btn {
+  align-self: flex-start;
+  margin-top: 3px;
+  height: 30px;
+}
+
+/* The side panel has to make room for it. */
+.side {
+  bottom: calc(var(--gap) + 74px + var(--gap) + 168px);
+}
+
+/* ============================================================== the fanfare */
+
+.fanfare {
+  position: absolute;
+  top: calc(var(--gap) + 48px + var(--gap));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(440px, calc(100vw - 2 * var(--gap)));
+  padding: 16px 18px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 2px solid var(--accent);
+  animation: fanfare-in 0.42s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+@keyframes fanfare-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -14px);
+  }
+}
+.fanfare__tag {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.fanfare b {
+  font-family: var(--display);
+  font-size: 22px;
+  letter-spacing: -0.01em;
+}
+.fanfare p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.fanfare__rewards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+.fanfare__rewards span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(240, 179, 87, 0.13);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+.fanfare .btn {
+  align-self: flex-end;
+  margin-top: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fanfare {
+    animation: none;
+  }
+  .ladder__track span {
+    transition: none;
+  }
+}
+
+/* On a narrow screen the objective is the thing worth keeping; the town list
+   collapses behind its own toggle anyway. */
+@media (max-width: 720px) {
+  .ladder {
+    display: none;
+  }
+  .objective {
+    width: auto;
+    right: var(--gap);
+  }
+  .side {
+    bottom: calc(var(--gap) + 74px + var(--gap) + 190px);
+  }
+}

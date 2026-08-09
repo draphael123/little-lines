@@ -24,9 +24,10 @@ import { StructureView } from './StructureView'
 import { groundDetail } from './detail'
 import { buildSurface } from './terrainSurface'
 import { planCountry } from './townLayout'
-import type { Settlement } from './towns'
+import type { Settlement, TownReport } from './towns'
+import { TownLabels } from './TownLabels'
 import { Buildings, Roads, Woods } from './TownView'
-import { Trains, useTrains } from './TrainView'
+import { Steam, Trains, useTrains } from './TrainView'
 import type { Pose, SpeedName } from './trainRun'
 
 /** Kept out of the render so the material is not handed a new Vector2 a frame. */
@@ -379,6 +380,7 @@ export interface RegionSceneProps {
   network: RailNetwork
   structures: Structure[]
   settlements: Settlement[]
+  reports: TownReport[]
   tool: RegionTool
   view: ViewMode
   lift: number
@@ -395,7 +397,7 @@ export interface RegionSceneProps {
 
 export function RegionScene(props: RegionSceneProps) {
   const {
-    seed, night, network, structures, settlements, tool, view, lift,
+    seed, night, network, structures, settlements, reports, tool, view, lift,
     trains: roster, speed, running,
     onLay, onAdjust, onPlace, onDemolish, onStatus, onHover,
   } = props
@@ -503,6 +505,7 @@ export function RegionScene(props: RegionSceneProps) {
       <Roads field={field} roads={country.roads} />
       <Buildings buildings={country.buildings} night={night} />
 
+      <TownLabels field={field} reports={reports} />
       <RailView field={field} network={network} />
       <StructureView structures={structures} night={night} />
       <RailPreview points={preview?.points ?? null} ok={preview?.ok ?? true} />
@@ -515,6 +518,7 @@ export function RegionScene(props: RegionSceneProps) {
           if (i === 0) ridePose.current = pose
         }}
       />
+      <Steam trains={trainStates} running={running} />
 
       <RegionCamera
         field={field}

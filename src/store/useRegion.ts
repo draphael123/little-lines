@@ -23,10 +23,12 @@ import {
   type RailNetwork,
 } from '../world/rail'
 import type { RegionTool, ViewMode } from '../world/RegionScene'
+import { MILESTONES, rungFor, type Milestone } from '../world/milestones'
 import type { SpeedName } from '../world/trainRun'
 import {
   MAX_TRAINS,
   seedSettlements,
+  servedPopulation,
   survey,
   tick,
   totalPopulation,
@@ -63,6 +65,12 @@ export interface RegionState {
   running: boolean
   night: boolean
 
+  /** People the railway actually carries — what progression is measured in. */
+  served: number
+  /** Highest rung reached, kept so a milestone is never paid twice. */
+  rung: number
+  /** The rung just reached, for the celebration card. Cleared by the player. */
+  fanfare: Milestone | null
   status: Status
   announcement: string
   hovered: { x: number; z: number } | null
@@ -86,6 +94,7 @@ export interface RegionState {
   openTutorial: () => void
   closeTutorial: () => void
   setGuide: (open: boolean) => void
+  clearFanfare: () => void
 
   lay: (result: LayResult) => void
   adjust: (edgeId: string, delta: number) => void
@@ -106,6 +115,8 @@ interface Saved {
   balance: number
   passengers: number
   months: number
+  served: number
+  rung: number
   structures: Structure[]
   settlements: Settlement[]
   trains: number
@@ -149,6 +160,8 @@ function load(): Saved | null {
         balance: Math.max(0, num(raw.balance, STARTING_FUNDS)),
         passengers: Math.max(0, num(raw.passengers, 0)),
         months: Math.max(0, num(raw.months, 0)),
+        served: Math.max(0, num(raw.served, 0)),
+        rung: int(raw.rung, 0, 0, MILESTONES.length - 1),
         structures,
         settlements: settlements.length > 0 ? settlements : freshSettlements(),
         trains: int(raw.trains, 1, 1, MAX_TRAINS),
@@ -196,6 +209,8 @@ export const useRegion = create<RegionState>()((set, get) => {
         balance: Math.round(s.balance),
         passengers: Math.round(s.passengers),
         months: Math.round(s.months),
+        served: Math.round(s.served),
+        rung: s.rung,
         structures: s.structures,
         settlements: s.settlements,
         trains: s.trains,
@@ -227,6 +242,9 @@ export const useRegion = create<RegionState>()((set, get) => {
     balance: saved?.balance ?? STARTING_FUNDS,
     passengers: saved?.passengers ?? 0,
     months: saved?.months ?? 0,
+    served: saved?.served ?? 0,
+    rung: saved?.rung ?? 0,
+    fanfare: null,
 
     tool: 'rail',
     building: 'station',
@@ -294,6 +312,7 @@ export const useRegion = create<RegionState>()((set, get) => {
       persistSettings()
     },
     setGuide: (showGuide) => set({ showGuide }),
+    clearFanfare: () => set({ fanfare: null }),
 
     lay: (result) => {
       if (!result.ok || !result.edge) return
@@ -390,12 +409,31 @@ export const useRegion = create<RegionState>()((set, get) => {
       const step = dt * scale
       const result = tick(field, s.network, s.structures, s.settlements, s.trains, step)
       const spend = (upkeepTotal(s.structures) / MONTH_SECONDS) * step
+
+      // Progression is measured in people the railway actually carries. It can
+      // fall — lose a station and the place it served stops counting — but the
+      // rung already reached never does, so nothing is unlocked and then taken
+      // away again, and no grant is ever paid twice.
+      const served = servedPopulation(
+        survey(field, s.network, s.structures, result.settlements, s.trains),
+      )
+      const reached = Math.max(s.rung, rungFor(served))
+      const earned = MILESTONES.slice(s.rung + 1, reached + 1)
+      const grants = earned.reduce((sum, m) => sum + m.grant, 0)
+
       set({
         settlements: result.settlements,
-        balance: Math.max(0, s.balance + result.income - spend),
+        balance: Math.max(0, s.balance + result.income - spend + grants),
         passengers: s.passengers + result.passengers,
         months: s.months + step / MONTH_SECONDS,
         trains: Math.min(s.trains, trainCapacity(s.structures)),
+        served,
+        rung: reached,
+        fanfare: earned.length > 0 ? earned[earned.length - 1] : s.fanfare,
+        announcement:
+          earned.length > 0
+            ? `${earned[earned.length - 1].name} reached.`
+            : s.announcement,
       })
       persist()
     },
@@ -409,6 +447,9 @@ export const useRegion = create<RegionState>()((set, get) => {
         balance: STARTING_FUNDS,
         passengers: 0,
         months: 0,
+        served: 0,
+        rung: 0,
+        fanfare: null,
         status: { text: 'A fresh country. Drag to lay your first line.', ok: true },
       })
     },
@@ -435,6 +476,7 @@ export const regionField = field
  */
 export const selectReports = (s: RegionState): TownReport[] =>
   survey(field, s.network, s.structures, s.settlements, s.trains)
+export const selectServed = (s: RegionState) => s.served
 export const selectPopulation = (s: RegionState) => Math.round(totalPopulation(s.settlements))
 export const selectUpkeep = (s: RegionState) => upkeepTotal(s.structures)
 export const selectMiles = (s: RegionState) => totalLength(s.network) / 1000

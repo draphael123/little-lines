@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { BUILDINGS, buildingById, unlockedAt, type BuildingId } from '../world/buildings'
+import { BUILDINGS, buildingById, type BuildingId } from '../world/buildings'
+import { MILESTONES, milestoneAt, nextMilestone, progressTo, unlockedFor } from '../world/milestones'
 import type { RegionTool, ViewMode } from '../world/RegionScene'
 import { TIER_LABEL, type TownReport } from '../world/towns'
 import type { SpeedName } from '../world/trainRun'
@@ -7,10 +8,12 @@ import {
   selectCapacity,
   selectMiles,
   selectPopulation,
+  selectServed,
   selectStations,
   selectUpkeep,
   useRegion,
 } from '../store/useRegion'
+import type { Objective } from '../world/objective'
 import { Icon, type IconName } from './Icon'
 
 const TOOLS: Array<{ id: RegionTool; icon: IconName; label: string; key: string }> = [
@@ -76,6 +79,8 @@ export function RegionTopBar() {
         <Stat icon="rail" value={miles.toFixed(1)} unit="km of line" label="line laid" />
         <Stat icon="train" value={`${trains}`} unit={`of ${capacity}`} label="trains running" />
       </div>
+      <span className="rule" />
+      <Ladder />
       <span className="rule" />
       <button
         type="button"
@@ -206,8 +211,8 @@ export function RegionDock() {
   const setBuilding = useRegion((s) => s.setBuilding)
   // Selected as a number, not an array: zustand compares selector results by
   // identity, and a fresh array every read is an infinite render loop.
-  const population = useRegion(selectPopulation)
-  const unlocked = useMemo(() => unlockedAt(population), [population])
+  const served = useRegion(selectServed)
+  const unlocked = useMemo(() => unlockedFor(served), [served])
   const status = useRegion((s) => s.status)
   const lift = useRegion((s) => s.lift)
   const setLift = useRegion((s) => s.setLift)
@@ -231,7 +236,7 @@ export function RegionDock() {
                     aria-label={
                       open
                         ? `${b.name} — £${b.cost} to build, £${b.upkeep} a month`
-                        : `${b.name} — opens at ${b.unlockAt} people`
+                        : `${b.name} — opens once the railway carries ${b.unlockAt} people`
                     }
                     onClick={() => setBuilding(b.id)}
                   >
@@ -427,6 +432,117 @@ export function RegionReadout() {
           </button>
         ))}
       </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------- the ladder */
+
+/**
+ * How far up the ladder the railway has climbed. Reads in people carried
+ * rather than people in the region, because that is what actually earns the
+ * next rung — and it makes the very first station feel like it did something.
+ */
+function Ladder() {
+  const served = useRegion(selectServed)
+  const here = milestoneAt(served)
+  const next = nextMilestone(served)
+  const fraction = progressTo(served)
+  const rung = MILESTONES.indexOf(here) + 1
+
+  return (
+    <div
+      className="ladder"
+      role="group"
+      aria-label={
+        next
+          ? `${here.name}, rung ${rung} of ${MILESTONES.length}. ${Math.round(served)} of ${next.served} people carried towards ${next.name}.`
+          : `${here.name} — the top of the ladder.`
+      }
+    >
+      <div className="ladder__head">
+        <b>{here.name}</b>
+        <i>
+          {next
+            ? `${Math.round(served).toLocaleString()} / ${next.served.toLocaleString()} carried`
+            : `${Math.round(served).toLocaleString()} carried`}
+        </i>
+      </div>
+      <div className="ladder__track" aria-hidden="true">
+        <span style={{ width: `${fraction * 100}%` }} />
+      </div>
+    </div>
+  )
+}
+
+/* ----------------------------------------------------------- what to do next */
+
+/**
+ * The advisor. One instruction at a time, derived from the state of the
+ * country, so it is never stale and never needs stepping through.
+ */
+export function RegionObjective({ objective }: { objective: Objective }) {
+  const setTool = useRegion((s) => s.setTool)
+  const setBuilding = useRegion((s) => s.setBuilding)
+  const tool = useRegion((s) => s.tool)
+
+  const act = () => {
+    if (!objective.tool) return
+    setTool(objective.tool)
+    if (objective.building) setBuilding(objective.building as BuildingId)
+  }
+
+  return (
+    <aside
+      className={`objective pane${objective.idle ? ' objective--idle' : ''}`}
+      aria-label="What to do next"
+    >
+      <span className="objective__tag">{objective.idle ? 'Where you are' : 'Next'}</span>
+      <b>{objective.title}</b>
+      <p>{objective.detail}</p>
+      {objective.tool && tool !== objective.tool && (
+        <button type="button" className="btn btn--accent" onClick={act}>
+          {objective.tool === 'rail' ? 'Take the rail tool' : 'Take the build tool'}
+        </button>
+      )}
+    </aside>
+  )
+}
+
+/* -------------------------------------------------------------- the fanfare */
+
+/** Shown once, when a rung is reached. Dismisses itself if left alone. */
+export function RegionFanfare() {
+  const fanfare = useRegion((s) => s.fanfare)
+  const clear = useRegion((s) => s.clearFanfare)
+
+  useEffect(() => {
+    if (!fanfare) return
+    const id = window.setTimeout(clear, 9000)
+    return () => window.clearTimeout(id)
+  }, [fanfare, clear])
+
+  if (!fanfare) return null
+  const opened = fanfare.unlocks ? buildingById(fanfare.unlocks) : null
+
+  return (
+    <div className="fanfare pane" role="status">
+      <span className="fanfare__tag">Milestone</span>
+      <b>{fanfare.name}</b>
+      <p>{fanfare.blurb}</p>
+      <div className="fanfare__rewards">
+        <span>
+          <Icon name="coin" size={15} /> £{fanfare.grant.toLocaleString()} grant
+        </span>
+        {opened && (
+          <span>
+            <Icon name="station" size={15} /> {opened.name} unlocked
+          </span>
+        )}
+      </div>
+      <button type="button" className="btn btn--quiet" onClick={clear}>
+        Good
+      </button>
     </div>
   )
 }

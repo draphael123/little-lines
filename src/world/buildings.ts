@@ -88,7 +88,7 @@ export const BUILDINGS: BuildingDef[] = [
     upkeep: 12,
     onRail: true,
     range: 500,
-    unlockAt: 150,
+    unlockAt: 180,
     blurb:
       'A yard for freight. Towns in reach can carry more people and pay better fares, because the line brings them more than passengers.',
     effect: { cap: 60, fares: 0.35 },
@@ -101,7 +101,7 @@ export const BUILDINGS: BuildingDef[] = [
     upkeep: 8,
     onRail: true,
     range: 450,
-    unlockAt: 250,
+    unlockAt: 420,
     blurb:
       'Somewhere to trade. Quickens the growth of everywhere in reach — provided the market can be reached by rail itself.',
     effect: { growth: 0.3, cap: 30 },
@@ -114,7 +114,7 @@ export const BUILDINGS: BuildingDef[] = [
     upkeep: 11,
     onRail: true,
     range: 450,
-    unlockAt: 500,
+    unlockAt: 900,
     blurb:
       'Families stay where there is a school. A modest lift to growth and a large one to how many people the parish will hold.',
     effect: { growth: 0.2, cap: 60 },
@@ -127,7 +127,7 @@ export const BUILDINGS: BuildingDef[] = [
     upkeep: 14,
     onRail: true,
     range: 450,
-    unlockAt: 900,
+    unlockAt: 1700,
     blurb:
       'The difference between a town that holds and a town that empties. The largest lift there is to the population a place can carry.',
     effect: { growth: 0.15, cap: 90 },
@@ -140,7 +140,7 @@ export const BUILDINGS: BuildingDef[] = [
     upkeep: 30,
     onRail: true,
     range: 620,
-    unlockAt: 1500,
+    unlockAt: 3000,
     blurb:
       'A great station with far more reach than an ordinary one, and the pull to match. Expensive to keep, and worth it at the heart of a network.',
     effect: { growth: 0.35, cap: 100, fares: 0.25 },

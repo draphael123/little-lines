@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
-import type { Group } from 'three'
+import { Object3D, type Group, type InstancedMesh } from 'three'
 import { components, componentPath, type RailNetwork } from './rail'
 import { SPEEDS, TrainRunner, makePath, type Pose, type SpeedName } from './trainRun'
 
@@ -146,5 +146,107 @@ export function Trains({
         </group>
       ))}
     </group>
+  )
+}
+
+/* -------------------------------------------------------------------- steam */
+
+const PUFFS = 90
+const PUFF_LIFE = 4.2
+
+/**
+ * Chimney smoke, pooled.
+ *
+ * One instanced mesh for every train on the network: a puff is emitted from
+ * whichever chimney is working, then left behind in world space to rise, swell
+ * and fade, so the smoke trails along the line the train has just come down
+ * rather than riding with it. A fixed pool means no allocation per frame and a
+ * hard ceiling on the cost.
+ */
+export function Steam({ trains, running }: { trains: TrainState[]; running: boolean }) {
+  const mesh = useRef<InstancedMesh>(null)
+  const pool = useMemo(
+    () =>
+      Array.from({ length: PUFFS }, () => ({
+        age: Infinity,
+        x: 0,
+        y: 0,
+        z: 0,
+        drift: 0,
+        spin: 0,
+        size: 1,
+      })),
+    [],
+  )
+  const dummy = useMemo(() => new Object3D(), [])
+  const cursor = useRef(0)
+  const since = useRef(0)
+
+  useFrame((_, dt) => {
+    const step = Math.min(dt, 0.05)
+    const instances = mesh.current
+    if (!instances) return
+
+    // Emit: one puff per working chimney, at a steady interval.
+    if (running && trains.length > 0) {
+      since.current += step
+      const gap = 0.16
+      while (since.current >= gap) {
+        since.current -= gap
+        for (const train of trains) {
+          if (!train.runner.moving) continue
+          const pose = train.runner.pose()
+          const puff = pool[cursor.current % PUFFS]
+          cursor.current++
+          puff.age = 0
+          puff.x = pose.position[0] + Math.sin(pose.yaw) * 5
+          puff.y = pose.position[1] + 5.4
+          puff.z = pose.position[2] + Math.cos(pose.yaw) * 5
+          puff.drift = (cursor.current % 7) * 0.12 - 0.36
+          puff.spin = (cursor.current % 11) * 0.57
+          puff.size = 1 + (cursor.current % 5) * 0.14
+        }
+      }
+    }
+
+    let drawn = 0
+    for (const puff of pool) {
+      if (puff.age > PUFF_LIFE) continue
+      puff.age += step
+      if (puff.age > PUFF_LIFE) continue
+      const t = puff.age / PUFF_LIFE
+      dummy.position.set(
+        puff.x + puff.drift * puff.age * 3.5,
+        puff.y + puff.age * 5.2,
+        puff.z + puff.drift * puff.age * 1.6,
+      )
+      // swelling as it cools, and turning over as it goes
+      const size = (1.6 + t * 7) * puff.size
+      dummy.scale.setScalar(size)
+      dummy.rotation.set(0, puff.spin + t, 0)
+      dummy.updateMatrix()
+      instances.setMatrixAt(drawn, dummy.matrix)
+      drawn++
+    }
+    instances.count = drawn
+    instances.instanceMatrix.needsUpdate = true
+
+    // One opacity for the whole pool: individually fading each puff would mean
+    // a material per instance. The oldest puffs are the largest, so swelling
+    // alone reads convincingly as dispersal.
+    const material = instances.material as { opacity: number }
+    material.opacity = 0.3
+  })
+
+  return (
+    <instancedMesh
+      ref={mesh}
+      args={[undefined, undefined, PUFFS]}
+      frustumCulled={false}
+      raycast={() => null}
+    >
+      <sphereGeometry args={[1, 7, 6]} />
+      <meshStandardMaterial color="#e8e4dc" transparent opacity={0.3} roughness={1} depthWrite={false} />
+    </instancedMesh>
   )
 }

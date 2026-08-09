@@ -1,8 +1,17 @@
 import { useEffect, useMemo } from 'react'
 import { initAudio } from './audio/engine'
 import { selectReports, useRegion } from './store/useRegion'
-import { RegionDock, RegionPanel, RegionReadout, RegionTopBar } from './ui/RegionHUD'
+import { trainCapacity } from './world/towns'
+import {
+  RegionDock,
+  RegionFanfare,
+  RegionObjective,
+  RegionPanel,
+  RegionReadout,
+  RegionTopBar,
+} from './ui/RegionHUD'
 import { RegionGuide, RegionTutorial } from './ui/RegionTutorial'
+import { objectiveFor } from './world/objective'
 import { RegionStage } from './world/RegionStage'
 
 export default function App() {
@@ -17,6 +26,8 @@ export default function App() {
   const trains = useRegion((s) => s.trains)
   const speed = useRegion((s) => s.speed)
   const running = useRegion((s) => s.running)
+  const balance = useRegion((s) => s.balance)
+  const served = useRegion((s) => s.served)
   const announcement = useRegion((s) => s.announcement)
 
   // The survey is derived, so it is recomputed from exactly the things that
@@ -24,6 +35,21 @@ export default function App() {
   const reports = useMemo(
     () => selectReports({ network, structures, settlements, trains } as Parameters<typeof selectReports>[0]),
     [network, structures, settlements, trains],
+  )
+
+  const objective = useMemo(
+    () =>
+      objectiveFor({
+        network,
+        structures,
+        reports,
+        balance,
+        running,
+        served,
+        trains,
+        capacity: trainCapacity(structures),
+      }),
+    [network, structures, reports, balance, running, served, trains],
   )
 
   useShortcuts()
@@ -43,6 +69,7 @@ export default function App() {
           network={network}
           structures={structures}
           settlements={settlements}
+          reports={reports}
           tool={tool}
           view={view}
           lift={lift}
@@ -61,10 +88,12 @@ export default function App() {
       <div className="hud">
         <RegionTopBar />
         <RegionPanel reports={reports} />
+        <RegionObjective objective={objective} />
         <RegionDock />
         <RegionReadout />
       </div>
 
+      <RegionFanfare />
       <RegionTutorial />
       <RegionGuide />
 

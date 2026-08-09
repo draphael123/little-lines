@@ -123,7 +123,7 @@ export interface TownReport {
  * year of play to become a village, not eight seconds.
  */
 export const BASE_GROWTH = 0.34
-export const FARE_RATE = 0.05
+export const FARE_RATE = 0.009
 export const DECLINE_RATE = 0.14
 export const FLOOR_POPULATION = 8
 export const MAX_TRAINS = 12
@@ -327,6 +327,17 @@ export function tick(
 
   return { settlements: next, income, passengers, population }
 }
+
+/**
+ * People the railway actually carries: the population of places that have a
+ * station on a network reaching somewhere else. This — not the region total —
+ * is what progression is measured in, so the ladder starts at zero however
+ * many hamlets the country happens to have been seeded with.
+ */
+export const servedPopulation = (reports: TownReport[]) =>
+  reports
+    .filter((r) => r.state === 'growing' || r.state === 'full')
+    .reduce((sum, r) => sum + r.settlement.population, 0)
 
 export const totalPopulation = (settlements: Settlement[]) =>
   settlements.reduce((n, s) => n + s.population, 0)
