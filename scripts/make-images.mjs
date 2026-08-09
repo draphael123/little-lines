@@ -269,7 +269,7 @@ const og = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" vi
     <rect x="-26" y="-62" width="656" height="136" rx="3" fill="rgba(246,239,225,.94)" stroke="${C.brass}" stroke-width="2"/>
     <text x="0" y="0" font-family="Georgia, 'Times New Roman', serif" font-size="76" fill="${C.ink}" letter-spacing="-1">Little Lines</text>
     <rect x="0" y="18" width="132" height="3" fill="${C.signal}"/>
-    <text x="0" y="51" font-family="Georgia, 'Times New Roman', serif" font-size="18.5" fill="#5b5346" letter-spacing="2.6">A MINIATURE RAILWAY · SURVEY &amp; FREE BUILD</text>
+    <text x="0" y="51" font-family="Georgia, 'Times New Roman', serif" font-size="18.5" fill="#5b5346" letter-spacing="2.6">A COZY TILE GAME · LAY THE LINE, MATCH THE LAND</text>
   </g>
 </svg>
 `
