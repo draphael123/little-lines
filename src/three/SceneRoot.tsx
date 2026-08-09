@@ -5,16 +5,16 @@ import { tilesInclude } from '../game/track'
 import type { Coord, RailLine } from '../game/types'
 import { useGame, worldForLevel } from '../store/useGame'
 import { CameraRig } from './CameraRig'
+import { Environment } from './Environment'
 import { hoverToneFor, resolveLevel } from './hover'
 import { Markers } from './Markers'
 import { moodFor } from './palette'
 import { Scenery } from './Scenery'
 import { Settlements } from './Settlements'
-import { Table } from './Table'
 import { Terrain } from './Terrain'
+import { TownLife } from './TownLife'
 import { DeliveryTrain, FreeTrains } from './Trains'
 import { TrackLines } from './TrackLines'
-import { Water } from './Water'
 
 /** Everything inside the WebGL canvas. */
 export function SceneRoot() {
@@ -32,12 +32,13 @@ export function SceneRoot() {
   const level = useMemo(() => resolveLevel(levelId), [levelId])
   const world = mode === 'puzzle' ? worldForLevel(level) : free.world
   const mood = moodFor(night)
-  // Lighting and shadows have to grow with the table, or a grand layout ends
-  // up with the sun inside it and half the survey outside the shadow frustum.
+
+  // Lighting and shadows grow with the map, or a grand layout ends up with the
+  // sun inside it and half the survey outside the shadow frustum.
   const span = Math.hypot(world.w, world.h)
   const lightScale = Math.max(1, span / 10)
   const shadowHalf = span * 0.8
-  const fogDensity = mood.fogDensity * (10 / Math.max(10, span))
+  const fogDensity = mood.fogDensity * (14 / Math.max(14, span))
 
   const lines = useMemo<RailLine[]>(
     () => (mode === 'puzzle' ? (route.length >= 1 ? [{ id: 'campaign', tiles: route }] : []) : free.lines),
@@ -52,10 +53,7 @@ export function SceneRoot() {
   )
 
   const country = useMemo(
-    () =>
-      mode === 'free'
-        ? surveyCountry(free.world, free.lines, free.settlements, free.trains)
-        : [],
+    () => (mode === 'free' ? surveyCountry(free.world, free.lines, free.settlements, free.trains) : []),
     [mode, free.world, free.lines, free.settlements, free.trains],
   )
 
@@ -68,7 +66,7 @@ export function SceneRoot() {
 
   return (
     <>
-      <color attach="background" args={[mood.background]} />
+      <color attach="background" args={[mood.horizon]} />
       <fogExp2 attach="fog" args={[mood.fog, fogDensity]} />
 
       <hemisphereLight args={[mood.hemi.sky, mood.hemi.ground, mood.hemi.intensity]} />
@@ -97,9 +95,8 @@ export function SceneRoot() {
         color={mood.fill.colour}
       />
 
-      <Table world={world} />
+      <Environment world={world} mood={mood} />
       <Terrain world={world} onPick={handlePick} onHover={handleHover} />
-      <Water world={world} mood={mood} />
       <TrackLines world={world} lines={lines} />
       <Scenery world={world} night={night} />
 
@@ -134,10 +131,12 @@ export function SceneRoot() {
               growing: r.state === 'growing' || r.state === 'full',
             }))}
           />
-          <Settlements
+          <Settlements world={world} lines={free.lines} settlements={free.settlements} night={night} />
+          <TownLife
             world={world}
             lines={free.lines}
             settlements={free.settlements}
+            running={free.running}
             night={night}
           />
           <FreeTrains

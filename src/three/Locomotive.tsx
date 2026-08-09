@@ -16,7 +16,7 @@ const SMOKE_PUFFS = 6
  * A tank engine and one coach: boiler, cab, chimney, turning wheels, a lamp
  * that lights at night and a thread of smoke that thins as it rises.
  */
-export function Locomotive({ night, rolling, livery = PALETTE.signal }: LocomotiveProps) {
+export function Locomotive({ night, rolling, livery = PALETTE.danger }: LocomotiveProps) {
   const wheels = useRef<Group>(null)
   const smoke = useRef<Group>(null)
   const clock = useRef(0)
@@ -124,7 +124,7 @@ export function Locomotive({ night, rolling, livery = PALETTE.signal }: Locomoti
         <mesh position={[0, 0.17, 0]} castShadow>
           <boxGeometry args={[0.17, 0.16, 0.4]} />
           <meshStandardMaterial
-            color={PALETTE.cream}
+            color={PALETTE.render}
             roughness={0.62}
             emissive={night ? '#e0a856' : '#000000'}
             emissiveIntensity={night ? 0.5 : 0}
@@ -132,7 +132,7 @@ export function Locomotive({ night, rolling, livery = PALETTE.signal }: Locomoti
         </mesh>
         <mesh position={[0, 0.262, 0]} castShadow>
           <boxGeometry args={[0.19, 0.028, 0.42]} />
-          <meshStandardMaterial color={PALETTE.slate} roughness={0.6} />
+          <meshStandardMaterial color={PALETTE.brass} roughness={0.6} />
         </mesh>
         {(
           [

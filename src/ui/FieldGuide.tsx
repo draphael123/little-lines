@@ -59,7 +59,7 @@ export function FieldGuide() {
       labelSuffix="Everything the survey office can tell you"
       onClose={() => setOpen(false)}
     >
-      <div className="guide-grid">
+      <div className="guide">
         {RULES.map((rule) => (
           <section key={rule.title}>
             <h3>{rule.title}</h3>
@@ -68,8 +68,8 @@ export function FieldGuide() {
         ))}
       </div>
 
-      <h3 style={{ marginTop: 22, fontSize: 18 }}>Free Build tools</h3>
-      <div className="guide-grid" style={{ marginTop: 8 }}>
+      <h3 style={{ marginTop: 22, fontSize: 18 }}>Build tools</h3>
+      <div className="guide" style={{ marginTop: 8 }}>
         {TOOL_INFO.map((tool) => (
           <section key={tool.id}>
             <h3 style={{ fontSize: 15 }}>
@@ -77,7 +77,7 @@ export function FieldGuide() {
                 style={{
                   fontFamily: 'var(--ui)',
                   fontSize: 10,
-                  border: '1px solid var(--line-strong)',
+                  border: '1px solid var(--hair-strong)',
                   padding: '1px 5px',
                   marginRight: 8,
                 }}

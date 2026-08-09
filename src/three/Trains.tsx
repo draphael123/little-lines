@@ -7,7 +7,7 @@ import { SPEED_UNITS, TrainRunner, buildRailPath, poseAt, type RailPath } from '
 import { PALETTE } from './palette'
 import { Locomotive } from './Locomotive'
 
-const LIVERIES = [PALETTE.signal, PALETTE.slate, '#6f8259', '#8a6a44', '#7a5b74']
+const LIVERIES = [PALETTE.danger, PALETTE.brass, '#6f8259', '#8a6a44', '#7a5b74']
 
 interface RunningTrainProps {
   path: RailPath

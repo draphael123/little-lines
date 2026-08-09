@@ -34,13 +34,13 @@ export function AccessibleGrid({
   }
 
   return (
-    <details className="a11y-board">
-      <summary>Keyboard survey grid</summary>
-      <p className="card__sub" style={{ margin: '4px 0 8px' }}>
+    <details className="a11y">
+      <summary>Keyboard grid</summary>
+      <p className="lede" style={{ margin: '4px 0 8px', fontSize: 12 }}>
         Arrow keys move between tiles; Enter or Space works the current tool on the focused tile.
       </p>
       <div style={{ overflowX: 'auto' }}>
-        <table className="board-grid" ref={table}>
+        <table ref={table}>
           <caption className="sr-only">{label}</caption>
           <tbody>
             {Array.from({ length: world.h }, (_, z) => (

@@ -6,7 +6,6 @@ import {
   MILESTONES,
   SIZE_UNLOCKS,
   buildNetworks,
-  buildingSlots,
   nextMilestone,
   populationCap,
   seedSettlements,
@@ -261,41 +260,6 @@ describe('foundation and names', () => {
   it('names places deterministically', () => {
     expect(settlementName(42)).toBe(settlementName(42))
     expect(settlementName(42)).toMatch(/^[A-Z][a-z]+$/)
-  })
-})
-
-describe('where the buildings go', () => {
-  it('grows the number of buildings with the population', () => {
-    const world = createWorld(10, 10)
-    const small = buildingSlots(world, { id: 'a', x: 5, z: 5, name: 'A', population: 6 }, [], [])
-    const large = buildingSlots(world, { id: 'a', x: 5, z: 5, name: 'A', population: 90 }, [], [])
-    expect(large.length).toBeGreaterThan(small.length)
-    expect(large.some((s) => s.landmark)).toBe(true)
-  })
-
-  it('never builds on rail, water or rock', () => {
-    let world = createWorld(9, 9)
-    world = withTile(world, { x: 5, z: 4 }, { kind: 'water' })
-    world = withTile(world, { x: 4, z: 5 }, { kind: 'rock' })
-    const rail = line('m', [[6, 5], [6, 4]])
-    const slots = buildingSlots(
-      world,
-      { id: 'a', x: 5, z: 5, name: 'A', population: 120 },
-      [rail],
-      [],
-    )
-    for (const slot of slots) {
-      const tile = world.tiles[slot.z * world.w + slot.x]
-      expect(tile.kind).not.toBe('water')
-      expect(tile.kind).not.toBe('rock')
-      expect(rail.tiles.some((t) => t.x === slot.x && t.z === slot.z)).toBe(false)
-    }
-  })
-
-  it('is stable between renders', () => {
-    const world = createWorld(9, 9)
-    const settlement = { id: 'a', x: 4, z: 4, name: 'A', population: 40 }
-    expect(buildingSlots(world, settlement, [], [])).toEqual(buildingSlots(world, settlement, [], []))
   })
 })
 

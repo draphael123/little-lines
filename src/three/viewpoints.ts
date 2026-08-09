@@ -1,21 +1,21 @@
 import type { World } from '../game/types'
-import { SKIRT, tableSize } from './geometry'
+import { tableSize } from './geometry'
 
 export type CameraPreset = 'west' | 'home' | 'east'
 
 export const FOV = 34
 
-/**
- * The table hangs a little below the origin once its frame and legs are
- * counted, so the camera aims slightly low and the layout sits centred.
- */
-export const LOOK_AT: [number, number, number] = [0, -SKIRT / 2, 0]
+/** The camera looks at ground level in the middle of the survey. */
+export const LOOK_AT: [number, number, number] = [0, 0, 0]
 
-/** Unit-ish directions the camera stands in for each surveyor's viewpoint. */
+/**
+ * Directions the camera stands in for each viewpoint. Deliberately low and
+ * oblique — a city builder looks along the ground, not down at a board.
+ */
 const DIRECTIONS: Record<CameraPreset, [number, number, number]> = {
-  home: [0, 0.62, 0.78],
-  west: [-0.74, 0.46, 0.44],
-  east: [0.74, 0.46, 0.44],
+  home: [0, 0.46, 0.89],
+  west: [-0.82, 0.38, 0.42],
+  east: [0.82, 0.38, 0.42],
 }
 
 /** The widest thing the camera has to fit: the table plus its timber frame. */

@@ -18,14 +18,14 @@ export function LevelSelect() {
       labelSuffix={`${total} of ${LEVELS.length * 3} stars earned · every survey is open from the start`}
       onClose={() => setOpen(false)}
     >
-      <div className="levels">
+      <div className="cards">
         {LEVELS.map((level) => {
           const earned = progress[level.id]
           return (
             <button
               key={level.id}
               type="button"
-              className="level-card"
+              className="card"
               aria-current={level.id === current}
               onClick={() => selectLevel(level.id)}
             >

@@ -1,88 +1,117 @@
 import type { Tile } from '../game/types'
 
-/** Painted-model palette. Muted moss, cream, slate, timber and signal red. */
+/**
+ * Naturalistic landscape colour under a charcoal interface: believable grass,
+ * stone and water rather than a painted model, with one warm accent doing all
+ * the work in the HUD.
+ */
 export const PALETTE = {
-  paper: '#efe5d2',
-  paperDeep: '#e3d6bd',
-  ink: '#2b2823',
-  timber: '#6b4a2f',
-  timberDark: '#4a3220',
-  timberLight: '#8a6a44',
-  brass: '#b08d4f',
-  brassDark: '#8a6c37',
-  moss: '#6f8259',
-  slate: '#4a6a84',
-  signal: '#a33224',
-  cream: '#f6efe1',
-  steel: '#b9b3a6',
+  ink: '#0e1216',
+  panel: '#161c23',
+  panelSoft: '#1e262f',
+  line: 'rgba(233,239,245,0.13)',
+  text: '#e8eef4',
+  textSoft: '#9aa7b4',
+  accent: '#f0b357',
+  accentDeep: '#c98a2f',
+  danger: '#e2604c',
+  good: '#63b17a',
+  rail: '#b7bcc0',
+  sleeper: '#6d5a43',
+  timber: '#7a6046',
+  timberDark: '#4f3d2b',
+  brass: '#c39a4d',
+  roof: '#a4503c',
+  render: '#e3dcce',
+  road: '#4a4d51',
+  roadLine: '#c8ccd0',
 } as const
 
-const MEADOW_BY_LEVEL = [0x7f9263, 0x738656, 0x66794e, 0x5b6d47, 0x536440]
-const FOREST_BY_LEVEL = [0x5f7550, 0x596d4b, 0x536546, 0x4d5e42, 0x48583e]
-const ROCK_BY_LEVEL = [0x99927f, 0x928b79, 0x8a8372, 0x827b6b, 0x7a7364]
-const WATER_BED = 0x3c5163
+/* ------------------------------------------------------------------ ground */
+
+type RGB = [number, number, number]
+
+const hexToRgb = (hex: number): RGB => [
+  ((hex >> 16) & 255) / 255,
+  ((hex >> 8) & 255) / 255,
+  (hex & 255) / 255,
+]
+
+export const GROUND = {
+  /** Grass gets drier and paler as it climbs. */
+  grass: [0x6f9e52, 0x679551, 0x5f8b4e, 0x77894c, 0x8b8f57].map(hexToRgb),
+  forest: [0x557f43, 0x517a42, 0x4c7340, 0x556f3e, 0x63713f].map(hexToRgb),
+  rock: [0x8a8378, 0x847d72, 0x7d766b, 0x767065, 0x6f695f].map(hexToRgb),
+  riverbed: hexToRgb(0x7d7256),
+  sand: hexToRgb(0xc2ad85),
+  cliff: hexToRgb(0x6d6357),
+  cliffFoot: hexToRgb(0x413a32),
+} as const
 
 const hash = (x: number, z: number) => {
   const n = Math.sin(x * 127.1 + z * 311.7) * 43758.5453
   return n - Math.floor(n)
 }
 
-const tint = (hex: number, f: number) => {
-  const r = Math.min(255, Math.max(0, Math.round(((hex >> 16) & 255) * f)))
-  const g = Math.min(255, Math.max(0, Math.round(((hex >> 8) & 255) * f)))
-  const b = Math.min(255, Math.max(0, Math.round((hex & 255) * f)))
-  return (r << 16) | (g << 8) | b
+/** Vertex colour for a patch of ground, with a whisper of natural variation. */
+export function groundColour(tile: Tile, x: number, z: number, face: 'top' | 'cliff' = 'top'): RGB {
+  if (face === 'cliff') return GROUND.cliff
+  const level = Math.max(0, Math.min(4, Math.round(tile.h)))
+  let base: RGB
+  if (tile.kind === 'water') base = GROUND.riverbed
+  else if (tile.kind === 'rock') base = GROUND.rock[level]
+  else if (tile.kind === 'forest') base = GROUND.forest[level]
+  else base = GROUND.grass[level]
+  const jitter = 0.94 + hash(x, z) * 0.11
+  return [
+    Math.min(1, base[0] * jitter),
+    Math.min(1, base[1] * jitter),
+    Math.min(1, base[2] * jitter),
+  ]
 }
 
-/** Colour of a tile's painted top face, with a whisper of hand-mixed variation. */
-export function tileColour(tile: Tile, x: number, z: number): number {
-  const level = Math.max(0, Math.min(4, Math.round(tile.h)))
-  let base: number
-  if (tile.kind === 'water') base = WATER_BED
-  else if (tile.kind === 'rock') base = ROCK_BY_LEVEL[level]
-  else if (tile.kind === 'forest') base = FOREST_BY_LEVEL[level]
-  else base = MEADOW_BY_LEVEL[level]
-  return tint(base, 0.94 + hash(x, z) * 0.12)
-}
+/* ------------------------------------------------------------------- mood */
 
 export interface SceneMood {
-  background: string
+  sky: string
+  horizon: string
   fog: string
   fogDensity: number
   sun: { colour: string; intensity: number; position: [number, number, number] }
   fill: { colour: string; intensity: number }
   hemi: { sky: string; ground: string; intensity: number }
-  lampIntensity: number
-  waterColour: string
-  waterRoughness: number
+  sea: string
+  seaRoughness: number
+  windows: string
+  windowGlow: number
 }
 
 export const DAY: SceneMood = {
-  background: '#e6dcc8',
-  fog: '#e0d5be',
-  fogDensity: 0.021,
-  sun: { colour: '#fff3dd', intensity: 2.5, position: [7, 11, 6] },
-  fill: { colour: '#bcd0dd', intensity: 0.5 },
-  hemi: { sky: '#dfe8ee', ground: '#7a6244', intensity: 0.85 },
-  lampIntensity: 0,
-  waterColour: '#5b7d97',
-  waterRoughness: 0.14,
+  sky: '#9fc4dd',
+  horizon: '#cfe0e8',
+  fog: '#c3d6e0',
+  fogDensity: 0.012,
+  sun: { colour: '#fff4e2', intensity: 2.9, position: [8, 12, 5] },
+  fill: { colour: '#a9c6de', intensity: 0.55 },
+  hemi: { sky: '#bcd7e8', ground: '#5d5342', intensity: 0.9 },
+  sea: '#2f7093',
+  seaRoughness: 0.16,
+  windows: '#000000',
+  windowGlow: 0,
 }
 
-/**
- * Night has to stay readable: a low blue moon plus a generous hemisphere, so
- * the carved ground still reads as ground while the lit windows do the work.
- */
 export const NIGHT: SceneMood = {
-  background: '#1d2330',
-  fog: '#181d28',
-  fogDensity: 0.03,
-  sun: { colour: '#b3c8e6', intensity: 1.15, position: [-6, 9, -5] },
-  fill: { colour: '#48608a', intensity: 0.7 },
-  hemi: { sky: '#5b7a9e', ground: '#2b241b', intensity: 1 },
-  lampIntensity: 1,
-  waterColour: '#2c4459',
-  waterRoughness: 0.08,
+  sky: '#101720',
+  horizon: '#1b2733',
+  fog: '#15202b',
+  fogDensity: 0.022,
+  sun: { colour: '#9fb8dc', intensity: 0.9, position: [-7, 10, -6] },
+  fill: { colour: '#3d5876', intensity: 0.5 },
+  hemi: { sky: '#3f5d7d', ground: '#1d1a15', intensity: 0.75 },
+  sea: '#152f45',
+  seaRoughness: 0.1,
+  windows: '#ffbf63',
+  windowGlow: 1,
 }
 
 export const moodFor = (night: boolean): SceneMood => (night ? NIGHT : DAY)

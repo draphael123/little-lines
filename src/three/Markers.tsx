@@ -122,8 +122,8 @@ export function Markers({
       )}
       {destination && (
         <>
-          <TilePlate world={world} at={destination} colour={PALETTE.signal} opacity={0.9} />
-          <SignalPost world={world} at={destination} colour={PALETTE.signal} height={0.62} />
+          <TilePlate world={world} at={destination} colour={PALETTE.danger} opacity={0.9} />
+          <SignalPost world={world} at={destination} colour={PALETTE.danger} height={0.62} />
         </>
       )}
       {stops.map((s) => (
@@ -146,7 +146,7 @@ export function Markers({
         <TilePlate
           world={world}
           at={hovered}
-          colour={hoverTone === 'bad' ? PALETTE.signal : hoverTone === 'good' ? '#f2f7ea' : '#e0dacb'}
+          colour={hoverTone === 'bad' ? PALETTE.danger : hoverTone === 'good' ? '#f2f7ea' : '#e0dacb'}
           opacity={hoverTone === 'bad' ? 0.8 : 0.95}
           inner={0.62}
           outer={0.71}
@@ -175,7 +175,7 @@ function HintRing({ world, at }: { world: World; at: Coord }) {
       raycast={() => null}
     >
       <ringGeometry args={[0.26, 0.42, 24]} />
-      <meshBasicMaterial color={PALETTE.signal} transparent opacity={0.85} />
+      <meshBasicMaterial color={PALETTE.danger} transparent opacity={0.85} />
     </mesh>
   )
 }

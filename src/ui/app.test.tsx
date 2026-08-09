@@ -38,20 +38,19 @@ afterEach(() => resetWebGLDetection(null))
 const tile = (x: number, z: number) =>
   screen.getByRole('button', { name: new RegExp(`^Tile ${x + 1}, ${z + 1}\\.`) })
 
-describe('the shell renders', () => {
-  it('puts the game, its modes and the table on the page', () => {
+describe('the HUD sits over the world', () => {
+  it('fills the window with the map and floats the chrome over it', () => {
     render(<App />)
+    expect(screen.getByRole('region', { name: 'The railway map' })).toBeInTheDocument()
     expect(screen.getByRole('banner')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Puzzle Post' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Free Build' })).toBeInTheDocument()
-    expect(screen.getByRole('region', { name: 'The relief railway table' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Survey' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Build' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: LEVELS[0].name })).toBeInTheDocument()
   })
 
-  it('offers a skip link straight to the table', () => {
+  it('offers a skip link straight to the map', () => {
     render(<App />)
-    const skip = screen.getByRole('link', { name: /skip to the survey table/i })
-    expect(skip).toHaveAttribute('href', '#board')
+    expect(screen.getByRole('link', { name: /skip to the map/i })).toHaveAttribute('href', '#board')
   })
 
   it('announces changes in a live region', async () => {
@@ -64,21 +63,44 @@ describe('the shell renders', () => {
     expect(live).toHaveTextContent(/night lighting/i)
   })
 
-  it('shows the elevation legend and the hovered-tile instrument', () => {
+  it('reads out the tile under the pointer', () => {
     render(<App />)
-    expect(screen.getByRole('heading', { name: /elevation/i })).toBeInTheDocument()
     expect(screen.getByText('Tile')).toBeInTheDocument()
+    expect(screen.getByText('Level')).toBeInTheDocument()
   })
 
-  it('gives the three camera viewpoints as a pressed-state group', () => {
+  it('gives the three viewpoints as a pressed-state group', () => {
     render(<App />)
     const group = screen.getByRole('group', { name: /camera viewpoints/i })
-    const home = within(group).getByRole('button', { name: 'Home' })
-    expect(home).toHaveAttribute('aria-pressed', 'true')
-    expect(within(group).getByRole('button', { name: 'West' })).toHaveAttribute(
+    expect(within(group).getByRole('button', { name: /home viewpoint/i })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(within(group).getByRole('button', { name: /west viewpoint/i })).toHaveAttribute(
       'aria-pressed',
       'false',
     )
+  })
+
+  it('switches day and night from the top bar', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    const toggle = screen.getByRole('button', { name: /switch to night/i })
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    await user.click(toggle)
+    expect(useGame.getState().night).toBe(true)
+    expect(screen.getByRole('button', { name: /switch to daylight/i })).toBeInTheDocument()
+  })
+
+  it('collapses the side panel and puts it back', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    const panel = screen.getByRole('complementary')
+    expect(panel).toHaveAttribute('data-open', 'true')
+    await user.click(screen.getByRole('button', { name: /collapse the panel/i }))
+    expect(screen.getByRole('complementary')).toHaveAttribute('data-open', 'false')
+    await user.click(screen.getByRole('button', { name: /expand the panel/i }))
+    expect(screen.getByRole('complementary')).toHaveAttribute('data-open', 'true')
   })
 })
 
@@ -86,21 +108,19 @@ describe('the WebGL fallback', () => {
   it('is shown instead of the canvas when WebGL is missing', () => {
     resetWebGLDetection(false)
     render(<App />)
-    expect(screen.getByRole('region', { name: /3D table unavailable/i })).toBeInTheDocument()
-    expect(document.querySelector('.stage__canvas')).toBeNull()
+    expect(screen.getByRole('region', { name: /3D map unavailable/i })).toBeInTheDocument()
+    expect(document.querySelector('.world canvas')).toBeNull()
   })
 
   it('keeps the accessible grid available either way', () => {
     resetWebGLDetection(false)
     render(<App />)
-    const summary = document.querySelector('.a11y-board summary')
-    expect(summary).toHaveTextContent(/keyboard survey grid/i)
+    expect(document.querySelector('.a11y summary')).toHaveTextContent(/keyboard/i)
     expect(tile(0, 0)).toBeInTheDocument()
   })
 
   it('reports honestly on a browser with no canvas support at all', () => {
     resetWebGLDetection(null)
-    // jsdom has no WebGL, so this is a real negative rather than a stub
     expect(detectWebGL()).toBe(false)
   })
 })
@@ -117,7 +137,7 @@ describe('the accessible grid plays the whole game', () => {
     render(<App />)
     await user.click(tile(4, 4))
     expect(useGame.getState().route).toHaveLength(0)
-    expect(screen.getByText(/every line starts at the/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/every line starts at the/i).length).toBeGreaterThan(0)
   })
 
   it('lays track from the depot and counts it against par', async () => {
@@ -161,13 +181,10 @@ describe('completing a survey', () => {
     render(<App />)
 
     expect(useGame.getState().route).toHaveLength(best.length)
-    const active = screen.getByText('Connect').closest('.dispatch__step')
-    expect(active).toHaveAttribute('data-state', 'active')
+    expect(screen.getByText('Connect').closest('.stage')).toHaveAttribute('data-state', 'active')
 
-    // one in the dispatch rail, one in the mobile sticky bar; CSS shows one
-    const run = screen.getAllByRole('button', { name: /run the delivery/i })
-    expect(run).toHaveLength(2)
-    expect(run[0]).toBeEnabled()
+    const run = screen.getByRole('button', { name: /run the delivery/i })
+    expect(run).toBeEnabled()
 
     await act(async () => {
       useGame.getState().toggleRun()
@@ -181,9 +198,9 @@ describe('completing a survey', () => {
   it('refuses to run an unfinished line and says why', async () => {
     const user = userEvent.setup()
     render(<App />)
-    await user.click(screen.getAllByRole('button', { name: /run the delivery/i })[0])
+    await user.click(screen.getByRole('button', { name: /run the delivery/i }))
     expect(useGame.getState().puzzleRunning).toBe(false)
-    expect(screen.getByText(/must start at the .* depot/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/must start at the .* depot/i).length).toBeGreaterThan(0)
   })
 
   it('says which piece is missing once the line has left the depot', async () => {
@@ -195,10 +212,10 @@ describe('completing a survey', () => {
     })
     render(<App />)
     expect(useGame.getState().puzzleRunning).toBe(false)
-    expect(screen.getByText(/does not yet reach/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/does not yet reach/i).length).toBeGreaterThan(0)
   })
 
-  it('undoes and redoes a length of track', async () => {
+  it('undoes and redoes a length of track from the dock', async () => {
     const user = userEvent.setup()
     render(<App />)
     const level = LEVELS[0]
@@ -219,19 +236,15 @@ describe('completing a survey', () => {
 })
 
 describe('the survey office menu', () => {
-  it('opens with menu semantics and switches the lamps on', async () => {
+  it('opens with menu semantics', async () => {
     const user = userEvent.setup()
     render(<App />)
-    const trigger = screen.getByRole('button', { name: /survey office/i })
+    const trigger = screen.getByRole('button', { name: /survey office menu/i })
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
     await user.click(trigger)
     expect(trigger).toHaveAttribute('aria-expanded', 'true')
-
     const menu = screen.getByRole('menu', { name: /survey office/i })
-    const lamps = within(menu).getByRole('menuitemcheckbox', { name: /night lamps/i })
-    expect(lamps).toHaveAttribute('aria-checked', 'false')
-    await user.click(lamps)
-    expect(useGame.getState().night).toBe(true)
+    expect(within(menu).getByRole('menuitem', { name: /field guide/i })).toBeInTheDocument()
   })
 
   it('needs two taps before it erases everything', async () => {
@@ -240,7 +253,7 @@ describe('the survey office menu', () => {
     await act(async () => {
       useGame.setState({ progress: { [LEVELS[0].id]: { stars: 3, bestTiles: 9 } } })
     })
-    await user.click(screen.getByRole('button', { name: /survey office/i }))
+    await user.click(screen.getByRole('button', { name: /survey office menu/i }))
     await user.click(screen.getByRole('menuitem', { name: /reset all progress/i }))
     expect(useGame.getState().progress[LEVELS[0].id]).toBeDefined()
     await user.click(screen.getByRole('menuitem', { name: /tap again to erase/i }))
@@ -290,7 +303,7 @@ describe('dialogs', () => {
   it('carries the field guide and the audio controls', async () => {
     const user = userEvent.setup()
     render(<App />)
-    await user.click(screen.getByRole('button', { name: /survey office/i }))
+    await user.click(screen.getByRole('button', { name: /survey office menu/i }))
     await user.click(screen.getByRole('menuitem', { name: /field guide/i }))
     const dialog = screen.getByRole('dialog', { name: /field guide/i })
     expect(within(dialog).getByRole('button', { name: /background music/i })).toBeInTheDocument()
@@ -299,20 +312,20 @@ describe('dialogs', () => {
   })
 })
 
-describe('free build', () => {
+describe('build mode', () => {
   beforeEach(async () => {
     await act(async () => useGame.getState().setMode('free'))
   })
 
   it('offers eight tools on keys 1 to 8', () => {
     render(<App />)
-    const group = screen.getByRole('group', { name: /free build tools/i })
-    const tools = within(group).getAllByRole('button')
+    const dock = screen.getByRole('group', { name: /build tools/i })
+    const tools = within(dock).getAllByRole('button')
     expect(tools).toHaveLength(8)
-    expect(tools.map((t) => t.textContent?.[0])).toEqual(['1', '2', '3', '4', '5', '6', '7', '8'])
+    expect(tools.map((t) => t.textContent)).toEqual(['1', '2', '3', '4', '5', '6', '7', '8'])
   })
 
-  it('picks a tool with its number key and explains it', async () => {
+  it('picks a tool with its number key and explains it in the flyout', async () => {
     const user = userEvent.setup()
     render(<App />)
     await user.keyboard('8')
@@ -324,8 +337,7 @@ describe('free build', () => {
     const user = userEvent.setup()
     render(<App />)
     const before = useGame.getState().free.tool
-    const volume = screen.getByLabelText(/trains in service/i)
-    volume.focus()
+    screen.getByLabelText(/trains in service/i).focus()
     await user.keyboard('5')
     expect(useGame.getState().free.tool).toBe(before)
   })
@@ -340,22 +352,22 @@ describe('free build', () => {
       useGame.getState().tapFreeTile({ x: 3, z: 2 })
     })
     expect(useGame.getState().free.lines[0].tiles).toHaveLength(1)
-    expect(screen.getByText(/the account holds/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/the account holds/i).length).toBeGreaterThan(0)
   })
 
-  it('needs two taps before it clears the world', async () => {
+  it('needs two taps before it clears the map', async () => {
     const user = userEvent.setup()
     render(<App />)
     await act(async () => useGame.getState().tapFreeTile({ x: 2, z: 2 }))
-    await user.click(screen.getByRole('button', { name: /^clear the world$/i }))
+    await user.click(screen.getByRole('button', { name: /^clear the map$/i }))
     expect(useGame.getState().free.lines).toHaveLength(1)
-    await user.click(screen.getByRole('button', { name: /confirm — clear the world/i }))
+    await user.click(screen.getByRole('button', { name: /confirm — clear the map/i }))
     expect(useGame.getState().free.lines).toHaveLength(0)
   })
 
-  it('keeps the bigger tables locked until a country has been grown', async () => {
+  it('keeps the bigger maps locked until a country has been grown', async () => {
     render(<App />)
-    const group = screen.getByRole('group', { name: /table size/i })
+    const group = screen.getByRole('group', { name: /map size/i })
     expect(within(group).getByRole('button', { name: /wide · locked/i })).toBeDisabled()
     await act(async () => useGame.setState({ career: { bestPopulation: 400 } }))
     expect(within(group).getByRole('button', { name: /wide · 18×13/i })).toBeEnabled()
@@ -363,13 +375,19 @@ describe('free build', () => {
 
   it('reports the country, and why a place is not growing', () => {
     render(<App />)
-    const panel = screen.getByRole('region', { name: /the country/i })
-    expect(within(panel).getByText('Population')).toBeInTheDocument()
-    expect(within(panel).getByText('Account')).toBeInTheDocument()
+    const panel = screen.getByRole('complementary', { name: /the country/i })
+    expect(within(panel).getByText('Served')).toBeInTheDocument()
     expect(within(panel).getAllByText(/no station/i).length).toBeGreaterThan(0)
   })
 
-  it('grows a settlement once a line joins two served stations', async () => {
+  it('shows population and money in the top bar', () => {
+    render(<App />)
+    const bar = screen.getByRole('banner')
+    expect(within(bar).getByText(/population/i)).toBeInTheDocument()
+    expect(within(bar).getByText(/account balance/i)).toBeInTheDocument()
+  })
+
+  it('grows a settlement once a line joins two served stations', () => {
     render(<App />)
     const before = useGame.getState().free
     const [a, b] = before.settlements
@@ -379,11 +397,8 @@ describe('free build', () => {
     const country = surveyCountry(before.world, before.lines, before.settlements, before.trains)
     expect(country.every((r) => r.state === 'unserved')).toBe(true)
 
-    // the simulation is pure, so drive it directly rather than through the table
     const world = before.world
-    const lines = [
-      { id: 'test', tiles: [{ x: a.x, z: a.z }, { x: b.x, z: b.z }] },
-    ]
+    const lines = [{ id: 'test', tiles: [{ x: a.x, z: a.z }, { x: b.x, z: b.z }] }]
     const stationed = {
       ...world,
       tiles: world.tiles.map((t, i) =>
@@ -396,7 +411,6 @@ describe('free build', () => {
     const served = linked.filter((r) => r.settlement.id === a.id || r.settlement.id === b.id)
     expect(served).toHaveLength(2)
     expect(served.every((r) => r.state === 'growing')).toBe(true)
-    // the hamlets nobody built a station for stay exactly as they were
     expect(linked.filter((r) => r.state === 'unserved').length).toBe(linked.length - 2)
 
     const ticked = tickCountry(stationed, lines, before.settlements, 2, 1)
@@ -412,9 +426,9 @@ describe('free build', () => {
       useGame.getState().tapFreeTile({ x: 3, z: 2 })
     })
     expect(useGame.getState().free.running).toBe(true)
-    await user.click(screen.getAllByRole('button', { name: /hold all trains/i })[0])
+    await user.click(screen.getByRole('button', { name: /hold all trains/i }))
     expect(useGame.getState().free.running).toBe(false)
-    await user.click(screen.getAllByRole('button', { name: /set the lines running/i })[0])
+    await user.click(screen.getByRole('button', { name: /set the lines running/i }))
     expect(useGame.getState().free.running).toBe(true)
   })
 })

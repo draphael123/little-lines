@@ -15,9 +15,8 @@
  *   · Fares are earned from population actually being served. Nothing ever
  *     goes bankrupt.
  */
-import { idx, inBounds, keyOf, neighbours, tileAt } from './grid'
+import { idx, inBounds, keyOf, tileAt } from './grid'
 import { mulberry32 } from './terrain'
-import { occupiedTiles } from './track'
 import type { Coord, RailLine, World } from './types'
 
 export type Tier = 'hamlet' | 'village' | 'town' | 'city'
@@ -286,10 +285,14 @@ export function surveyCountry(
   })
 }
 
-/** People per second at perfect service on ideal ground. */
-export const BASE_GROWTH = 0.9
+/**
+ * People per second at perfect service on ideal ground. Deliberately brisk:
+ * the first connected pair has to visibly reward you inside a minute or the
+ * sandbox reads as inert.
+ */
+export const BASE_GROWTH = 1.7
 /** Pounds per person per second, at perfect service. */
-export const FARE_RATE = 0.055
+export const FARE_RATE = 0.085
 
 export interface CountryTick {
   settlements: Settlement[]
@@ -338,9 +341,9 @@ export interface Milestone {
 }
 
 export const MILESTONES: Milestone[] = [
-  { population: 40, title: 'First timetable', detail: 'Two places joined by rail and a train between them.' },
-  { population: 120, title: 'Wide table unlocked', detail: 'The board grants you an eighteen by thirteen survey.' },
-  { population: 350, title: 'Grand table unlocked', detail: 'The full twenty-four by seventeen table is yours.' },
+  { population: 30, title: 'First timetable', detail: 'Two places joined by rail, and a train between them.' },
+  { population: 120, title: 'Wide map unlocked', detail: 'The board grants you an eighteen by thirteen survey.' },
+  { population: 350, title: 'Grand map unlocked', detail: 'The full twenty-four by seventeen country is yours.' },
   { population: 800, title: 'Trunk route', detail: 'The line is the making of this country.' },
   { population: 1600, title: 'The Grand Northern', detail: 'A network of national consequence.' },
 ]
@@ -406,67 +409,4 @@ export function seedSettlements(world: World, count: number, seed: number, exist
     })
   }
   return chosen
-}
-
-/* ------------------------------------------------------- where houses go */
-
-export interface BuildingSlot {
-  x: number
-  z: number
-  /** Offset within the tile, in world units. */
-  ox: number
-  oz: number
-  spin: number
-  landmark: boolean
-}
-
-/**
- * Deterministic building placement for a settlement, spilling into nearby
- * tiles as it grows. Never uses rail, water or rock, and never treads on a
- * neighbouring settlement's centre.
- */
-export function buildingSlots(
-  world: World,
-  settlement: Settlement,
-  lines: RailLine[],
-  others: Settlement[],
-): BuildingSlot[] {
-  const wanted = Math.max(1, Math.min(16, 1 + Math.floor(settlement.population / 7)))
-  const rail = occupiedTiles(lines)
-  const taken = new Set(
-    others.filter((s) => s.id !== settlement.id).map((s) => `${s.x},${s.z}`),
-  )
-  const centre = { x: settlement.x, z: settlement.z }
-
-  const ranked: Coord[] = []
-  const seen = new Set<string>()
-  const frontier: Coord[] = [centre]
-  while (frontier.length > 0 && ranked.length < wanted + 8) {
-    const c = frontier.shift()!
-    const k = keyOf(c)
-    if (seen.has(k)) continue
-    seen.add(k)
-    const tile = tileAt(world, c)
-    if (!tile) continue
-    const usable = tile.kind !== 'water' && tile.kind !== 'rock' && !rail.has(k) && !taken.has(k)
-    if (usable) ranked.push(c)
-    for (const n of neighbours(world, c)) if (!seen.has(keyOf(n))) frontier.push(n)
-  }
-
-  const slots: BuildingSlot[] = []
-  const rand = mulberry32(settlement.x * 7919 + settlement.z * 104729)
-  const tier = tierOf(settlement.population)
-  for (let i = 0; i < wanted && ranked.length > 0; i++) {
-    const c = ranked[i % ranked.length]
-    const second = i >= ranked.length
-    slots.push({
-      x: c.x,
-      z: c.z,
-      ox: (rand() - 0.5) * (second ? 0.52 : 0.3),
-      oz: (rand() - 0.5) * (second ? 0.52 : 0.3),
-      spin: Math.floor(rand() * 4) * (Math.PI / 2),
-      landmark: i === 0 && (tier === 'town' || tier === 'city'),
-    })
-  }
-  return slots
 }

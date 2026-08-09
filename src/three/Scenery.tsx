@@ -112,7 +112,7 @@ function Halt({ world, item, night }: { world: World; item: Placed; night: boole
       <mesh position={[0.56, 0.24, 0]} castShadow>
         <boxGeometry args={[0.26, 0.28, 0.5]} />
         <meshStandardMaterial
-          color={PALETTE.cream}
+          color={PALETTE.render}
           roughness={0.8}
           emissive={night ? '#d79a44' : '#000000'}
           emissiveIntensity={night ? 0.45 : 0}
@@ -124,7 +124,7 @@ function Halt({ world, item, night }: { world: World; item: Placed; night: boole
       </mesh>
       <mesh position={[0.44, 0.4, 0]} rotation={[0, 0, 0.24]} castShadow>
         <boxGeometry args={[0.46, 0.02, 0.62]} />
-        <meshStandardMaterial color={PALETTE.signal} roughness={0.7} />
+        <meshStandardMaterial color={PALETTE.danger} roughness={0.7} />
       </mesh>
       {night && <pointLight position={[0.5, 0.34, 0]} color="#ffca7a" intensity={0.7} distance={2.4} />}
     </group>

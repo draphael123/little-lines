@@ -46,10 +46,10 @@ export function TrackLines({ world, lines }: { world: World; lines: RailLine[] }
       {built.map((b) => (
         <group key={b.id}>
           <mesh geometry={b.sleepers} castShadow receiveShadow raycast={() => null}>
-            <meshStandardMaterial color={PALETTE.timberLight} roughness={0.92} metalness={0.02} />
+            <meshStandardMaterial color={PALETTE.sleeper} roughness={0.92} metalness={0.02} />
           </mesh>
           <mesh geometry={b.rails} castShadow raycast={() => null}>
-            <meshStandardMaterial color={PALETTE.steel} roughness={0.32} metalness={0.82} />
+            <meshStandardMaterial color={PALETTE.rail} roughness={0.32} metalness={0.82} />
           </mesh>
           <mesh geometry={b.bridge} castShadow receiveShadow raycast={() => null}>
             <meshStandardMaterial color={PALETTE.timber} roughness={0.85} metalness={0.03} />

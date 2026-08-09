@@ -1,30 +1,22 @@
 import { useEffect, useMemo } from 'react'
 import { initAudio } from './audio/engine'
-import { surveyCountry, totalPopulation } from './game/economy'
-import { levelById, LEVELS } from './game/levels'
+import { surveyCountry } from './game/economy'
+import { LEVELS, levelById } from './game/levels'
 import { reportRoute } from './game/scoring'
 import type { Coord, FreeTool, RailLine } from './game/types'
 import { TOOL_INFO, useGame, worldForLevel } from './store/useGame'
 import { TableStage } from './three/TableStage'
-import { StageOverlays } from './ui/StageOverlays'
-import { AccessibleGrid } from './ui/AccessibleGrid'
-import { CountryPanel, MilestoneToast } from './ui/CountryPanel'
-import {
-  CompletionCard,
-  DispatchStrip,
-  RunButton,
-  StatusCard,
-} from './ui/DispatchPanel'
 import { FieldGuide } from './ui/FieldGuide'
-import { FreePanel } from './ui/FreePanel'
 import { LevelSelect } from './ui/LevelSelect'
-import { PuzzlePanel } from './ui/PuzzlePanel'
-import { TopNav } from './ui/TopNav'
+import { RunDock } from './ui/RunDock'
+import { SidePanel } from './ui/SidePanel'
+import { ToolDock } from './ui/ToolDock'
+import { TopBar } from './ui/TopBar'
 import { Tutorial } from './ui/Tutorial'
+import { WorldReadout } from './ui/WorldReadout'
 
 export default function App() {
   const mode = useGame((s) => s.mode)
-  const night = useGame((s) => s.night)
   const levelId = useGame((s) => s.levelId)
   const route = useGame((s) => s.route)
   const free = useGame((s) => s.free)
@@ -40,10 +32,7 @@ export default function App() {
   )
 
   const country = useMemo(
-    () =>
-      mode === 'free'
-        ? surveyCountry(free.world, free.lines, free.settlements, free.trains)
-        : [],
+    () => (mode === 'free' ? surveyCountry(free.world, free.lines, free.settlements, free.trains) : []),
     [mode, free.world, free.lines, free.settlements, free.trains],
   )
 
@@ -58,50 +47,29 @@ export default function App() {
   }
 
   return (
-    <div className="app" data-night={night}>
-      <a className="skip-link" href="#board">
-        Skip to the survey table
+    <div className="game">
+      <a className="skip" href="#board">
+        Skip to the map
       </a>
-      <TopNav />
 
-      <div className="layout">
-        <aside className="rail rail--left" aria-label={mode === 'puzzle' ? 'Level briefing' : 'Build tools'}>
-          {mode === 'puzzle' ? <PuzzlePanel level={level} report={report} /> : <FreePanel />}
-        </aside>
-
-        <section className="stage" id="board" aria-label="The relief railway table">
-          <TableStage world={world} />
-          <StageOverlays world={world} />
-        </section>
-
-        <aside className="rail rail--right" aria-label="Dispatch">
-          <DispatchStrip report={report} />
-          <StatusCard level={level} report={report} />
-          <div className="hide-on-mobile-dispatch">
-            <RunButton report={report} />
-          </div>
-          {mode === 'puzzle' && <CompletionCard level={level} report={report} />}
-          {mode === 'free' && (
-            <>
-              <MilestoneToast />
-              <CountryPanel country={country} />
-            </>
-          )}
-          <AccessibleGrid
-            world={world}
-            lines={lines}
-            onPick={pick}
-            onFocusTile={(c) => useGame.getState().setHovered(c)}
-            label={
-              mode === 'puzzle'
-                ? `${level.name}: ${world.w} by ${world.h} survey grid`
-                : `Free build table: ${world.w} by ${world.h} grid`
-            }
-          />
-        </aside>
+      <div className="world" id="board" role="region" aria-label="The railway map">
+        <TableStage world={world} />
       </div>
 
-      <MobileDispatch />
+      <div className="hud">
+        <TopBar report={report} />
+        <SidePanel
+          level={level}
+          report={report}
+          country={country}
+          world={world}
+          lines={lines}
+          onPick={pick}
+        />
+        <ToolDock />
+        <RunDock level={level} report={report} />
+        <WorldReadout world={world} />
+      </div>
 
       <Tutorial />
       <FieldGuide />
@@ -110,40 +78,6 @@ export default function App() {
       <p aria-live="polite" role="status" className="sr-only">
         {announcement}
       </p>
-    </div>
-  )
-}
-
-function MobileDispatch() {
-  const mode = useGame((s) => s.mode)
-  const levelId = useGame((s) => s.levelId)
-  const route = useGame((s) => s.route)
-  const free = useGame((s) => s.free)
-  const level = useMemo(() => levelById(levelId) ?? LEVELS[0], [levelId])
-  const report = useMemo(() => reportRoute(worldForLevel(level), level, route), [level, route])
-  const population = Math.round(totalPopulation(free.settlements))
-
-  return (
-    <div className="mobile-dispatch">
-      <div className="mobile-dispatch__meta">
-        {mode === 'puzzle' ? (
-          <>
-            <b>
-              {report.trackTiles} / {level.par}
-            </b>
-            lengths against par
-          </>
-        ) : (
-          <>
-            <b>{population.toLocaleString()} people</b>
-            £{Math.floor(free.balance).toLocaleString()} ·{' '}
-            {TOOL_INFO.find((t) => t.id === free.tool)?.name}
-          </>
-        )}
-      </div>
-      <div style={{ flex: 1 }}>
-        <RunButton report={report} />
-      </div>
     </div>
   )
 }
@@ -169,6 +103,7 @@ function useKeyboardShortcuts() {
         else state.undo()
         return
       }
+      // W A S D pan the camera, so only the remaining letters are shortcuts.
       switch (event.key.toLowerCase()) {
         case 'h':
           if (state.mode === 'puzzle') {
@@ -180,7 +115,7 @@ function useKeyboardShortcuts() {
           event.preventDefault()
           state.setNight(!state.night)
           break
-        case 'r':
+        case ' ':
           event.preventDefault()
           state.toggleRun()
           break
@@ -203,8 +138,8 @@ function useKeyboardShortcuts() {
 /**
  * The world clock. Time only passes while the lines are running, and the tick
  * is driven from real elapsed time rather than a fixed step so a throttled
- * background tab resumes sensibly instead of jumping. Deliberately independent
- * of the render loop: the country keeps growing even without a canvas.
+ * background tab resumes sensibly. Deliberately independent of the render
+ * loop: the country keeps growing even without a canvas.
  */
 function useCountryClock() {
   const mode = useGame((s) => s.mode)

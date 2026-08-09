@@ -92,10 +92,10 @@ export function Dialog({
         <div className="dialog__head">
           <div>
             <h2 id={titleId}>{title}</h2>
-            {labelSuffix && <p className="card__sub" style={{ marginTop: 6 }}>{labelSuffix}</p>}
+            {labelSuffix && <p className="dialog__sub" style={{ marginTop: 6 }}>{labelSuffix}</p>}
           </div>
           {dismissible && (
-            <button type="button" className="btn btn--ghost" onClick={onClose}>
+            <button type="button" className="btn btn--quiet" onClick={onClose}>
               Close
             </button>
           )}

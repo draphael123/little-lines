@@ -10,7 +10,7 @@ export function AudioMenu() {
   return (
     <div className="field" style={{ gap: 12 }}>
       {!available && (
-        <p className="card__sub" role="status">
+        <p className="dialog__sub" role="status">
           This browser will not give the page an audio context, so Little Lines runs silently. Everything
           else works exactly as it should.
         </p>
@@ -52,7 +52,7 @@ export function AudioMenu() {
           onChange={(e) => setAudio({ volume: Number(e.target.value) })}
         />
       </label>
-      <p className="card__sub" style={{ margin: 0 }}>
+      <p className="dialog__sub" style={{ margin: 0 }}>
         Every sound is synthesised in the browser from oscillators — nothing is downloaded. See
         AUDIO_CREDITS.md in the repository.
       </p>
