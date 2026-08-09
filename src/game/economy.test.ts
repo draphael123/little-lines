@@ -6,6 +6,7 @@ import {
   MILESTONES,
   SIZE_UNLOCKS,
   buildNetworks,
+  makeSettlement,
   nextMilestone,
   populationCap,
   seedSettlements,
@@ -31,8 +32,8 @@ const station = (world: World, c: Coord) => withTile(world, c, { feature: 'stati
 function twoTownWorld() {
   let world = createWorld(12, 6)
   const settlements: Settlement[] = [
-    { id: 'a', x: 1, z: 2, name: 'Ashford', population: 10 },
-    { id: 'b', x: 9, z: 2, name: 'Brackwell', population: 10 },
+    makeSettlement('a', 1, 2, 'Ashford', 10),
+    makeSettlement('b', 9, 2, 'Brackwell', 10),
   ]
   const rail = line('main', Array.from({ length: 10 }, (_, i) => [i + 1, 3] as [number, number]))
   world = station(world, { x: 1, z: 3 })
@@ -127,7 +128,7 @@ describe('networks', () => {
 describe('a settlement only grows when the railway earns it', () => {
   it('does not grow without a station in the catchment', () => {
     const world = createWorld(12, 6)
-    const settlements: Settlement[] = [{ id: 'a', x: 1, z: 2, name: 'Ashford', population: 10 }]
+    const settlements: Settlement[] = [makeSettlement('a', 1, 2, 'Ashford', 10)]
     const reports = surveyCountry(world, [line('m', [[1, 3], [2, 3]])], settlements, 1)
     expect(reports[0].state).toBe('unserved')
     expect(reports[0].growth).toBe(0)
@@ -136,7 +137,7 @@ describe('a settlement only grows when the railway earns it', () => {
   it('does not grow when its line reaches nowhere else', () => {
     let world = createWorld(12, 6)
     world = station(world, { x: 1, z: 3 })
-    const settlements: Settlement[] = [{ id: 'a', x: 1, z: 2, name: 'Ashford', population: 10 }]
+    const settlements: Settlement[] = [makeSettlement('a', 1, 2, 'Ashford', 10)]
     const reports = surveyCountry(world, [line('m', [[1, 3], [2, 3], [3, 3]])], settlements, 1)
     expect(reports[0].station).toEqual({ x: 1, z: 3 })
     expect(reports[0].state).toBe('isolated')
@@ -165,8 +166,8 @@ describe('a settlement only grows when the railway earns it', () => {
     world = station(world, { x: 1, z: 7 })
     world = station(world, { x: 9, z: 7 })
     const far: Settlement[] = [
-      { id: 'a', x: 1, z: 0, name: 'Farhaven', population: 10 },
-      { id: 'b', x: 9, z: 7, name: 'Nearby', population: 10 },
+      makeSettlement('a', 1, 0, 'Farhaven', 10),
+      makeSettlement('b', 9, 7, 'Nearby', 10),
     ]
     const rail = line('m', Array.from({ length: 10 }, (_, i) => [i + 1, 7] as [number, number]))
     const reports = surveyCountry(world, [rail], far, 2)
@@ -177,10 +178,10 @@ describe('a settlement only grows when the railway earns it', () => {
   it('thins the service when stations outnumber the trains', () => {
     let world = createWorld(14, 6)
     const settlements: Settlement[] = [
-      { id: 'a', x: 1, z: 2, name: 'A', population: 10 },
-      { id: 'b', x: 5, z: 2, name: 'B', population: 10 },
-      { id: 'c', x: 9, z: 2, name: 'C', population: 10 },
-      { id: 'd', x: 12, z: 2, name: 'D', population: 10 },
+      makeSettlement('a', 1, 2, 'A', 10),
+      makeSettlement('b', 5, 2, 'B', 10),
+      makeSettlement('c', 9, 2, 'C', 10),
+      makeSettlement('d', 12, 2, 'D', 10),
     ]
     for (const s of settlements) world = station(world, { x: s.x, z: 3 })
     const rail = line('m', Array.from({ length: 13 }, (_, i) => [i, 3] as [number, number]))
@@ -217,7 +218,7 @@ describe('the clock', () => {
 
   it('earns nothing while nothing is connected', () => {
     const world = createWorld(10, 6)
-    const settlements: Settlement[] = [{ id: 'a', x: 1, z: 2, name: 'A', population: 30 }]
+    const settlements: Settlement[] = [makeSettlement('a', 1, 2, 'A', 30)]
     const tick = tickCountry(world, [], settlements, 3, 1)
     expect(tick.income).toBe(0)
     expect(tick.passengers).toBe(0)
@@ -284,6 +285,6 @@ describe('milestones and money', () => {
   it('prices a bridge and a tunnel above plain track', () => {
     expect(COSTS.bridge).toBeGreaterThan(COSTS.rail)
     expect(COSTS.tunnel).toBeGreaterThan(COSTS.bridge)
-    expect(COSTS.station).toBeGreaterThan(COSTS.rail)
+    expect(COSTS.tunnel).toBeGreaterThan(COSTS.terrain)
   })
 })

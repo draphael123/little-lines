@@ -329,8 +329,13 @@ describe('build mode', () => {
     const user = userEvent.setup()
     render(<App />)
     await user.keyboard('8')
-    expect(useGame.getState().free.tool).toBe('station')
-    expect(screen.getByText(/only on a tile carrying rail/i)).toBeInTheDocument()
+    expect(useGame.getState().free.tool).toBe('build')
+    // the flyout turns into the building palette, with the station chosen
+    expect(screen.getByRole('group', { name: /buildings/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /station — £180/i })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
   })
 
   it('does not steal number keys typed into a field', async () => {
@@ -370,7 +375,7 @@ describe('build mode', () => {
     const group = screen.getByRole('group', { name: /map size/i })
     expect(within(group).getByRole('button', { name: /wide · locked/i })).toBeDisabled()
     await act(async () => useGame.setState({ career: { bestPopulation: 400 } }))
-    expect(within(group).getByRole('button', { name: /wide · 18×13/i })).toBeEnabled()
+    expect(within(group).getByRole('button', { name: /wide · 26×19/i })).toBeEnabled()
   })
 
   it('reports the country, and why a place is not growing', () => {

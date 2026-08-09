@@ -101,7 +101,7 @@ export function withTile(world: World, c: Coord, patch: Partial<Tile>): World {
 }
 
 export const WORLD_SIZES = {
-  small: { w: 12, h: 10, label: 'Small' },
-  wide: { w: 18, h: 13, label: 'Wide' },
-  grand: { w: 24, h: 17, label: 'Grand' },
+  small: { w: 18, h: 14, label: 'Small' },
+  wide: { w: 26, h: 19, label: 'Wide' },
+  grand: { w: 34, h: 25, label: 'Grand' },
 } as const

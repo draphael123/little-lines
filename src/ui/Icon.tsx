@@ -30,6 +30,7 @@ export type IconName =
   | 'train'
   | 'people'
   | 'coin'
+  | 'clinic'
 
 const PATHS: Record<IconName, React.ReactNode> = {
   rail: (
@@ -171,6 +172,13 @@ const PATHS: Record<IconName, React.ReactNode> = {
     <>
       <circle cx="12" cy="12" r="8" />
       <path d="M12 8v8M9.5 9.8h4a1.7 1.7 0 0 1 0 3.4h-3a1.7 1.7 0 0 0 0 3.4h4" />
+    </>
+  ),
+  clinic: (
+    <>
+      <rect x="4" y="6" width="16" height="14" rx="2" />
+      <path d="M12 10v6M9 13h6" />
+      <path d="M9 6V4h6v2" />
     </>
   ),
 }

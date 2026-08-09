@@ -1,7 +1,11 @@
 import { create } from 'zustand'
 import { applyAudioSettings, playSfx, type AudioSettings, type SfxName } from '../audio/engine'
+import { MONTH_SECONDS, buildingById, isBuilding, unlockedBuildings } from '../game/buildings'
 import {
   COSTS,
+  MAX_TRAINS,
+  placedBuildings,
+  trainCapacity,
   MILESTONES,
   SIZE_UNLOCKS,
   STARTING_FUNDS,
@@ -40,7 +44,16 @@ import {
   removeTileFromLine,
   routeIsClosed,
 } from '../game/track'
-import type { Coord, FreeTool, LevelDef, RailLine, Speed, World, WorldSize } from '../game/types'
+import type {
+  BuildingId,
+  Coord,
+  FreeTool,
+  LevelDef,
+  RailLine,
+  Speed,
+  World,
+  WorldSize,
+} from '../game/types'
 import type { CameraPreset } from '../three/viewpoints'
 
 export type Mode = 'puzzle' | 'free'
@@ -79,7 +92,7 @@ const SAVE_SANDBOX = 'sandbox'
 const SAVE_PUZZLE = 'puzzle'
 const SAVE_CAREER = 'career'
 
-const TOOLS: FreeTool[] = ['rail', 'erase', 'raise', 'lower', 'tunnel', 'tree', 'water', 'station']
+const TOOLS: FreeTool[] = ['rail', 'erase', 'raise', 'lower', 'tunnel', 'tree', 'water', 'build']
 const SPEEDS: Speed[] = ['slow', 'normal', 'fast']
 const SIZES: WorldSize[] = ['small', 'wide', 'grand']
 
@@ -142,15 +155,19 @@ export const TOOL_INFO: ToolInfo[] = [
     hint: 'Turns a tile to river. Track crossing water gets a bridge deck and trestles automatically, and water in sight helps a settlement thrive.',
   },
   {
-    id: 'station',
+    id: 'build',
     key: '8',
-    name: 'Build station',
-    cost: COSTS.station,
-    hint: 'Only on a tile carrying rail. A station gathers passengers from every settlement within two tiles — and settlements only grow once a station serves them and the line reaches somewhere else.',
+    name: 'Place building',
+    cost: 0,
+    hint: 'Pick a building from the palette, then click a tile carrying rail. Stations gather passengers; every other building works only once the rail can reach it too.',
   },
 ]
 
 export const toolInfo = (id: FreeTool) => TOOL_INFO.find((t) => t.id === id) ?? TOOL_INFO[0]
+
+/** Surveys the player has actually delivered, which is what earns buildings. */
+const completedLevels = (progress: Record<string, LevelProgress>) =>
+  new Set(Object.entries(progress).filter(([, p]) => p.stars > 0).map(([id]) => id))
 
 let lineSeq = 0
 const nextLineId = () => `line-${Date.now().toString(36)}-${(lineSeq++).toString(36)}`
@@ -222,6 +239,8 @@ interface FreeState {
   settlements: Settlement[]
   activeLineId: string | null
   tool: FreeTool
+  /** Which building the place tool will put down. */
+  building: BuildingId
   trains: number
   speed: Speed
   running: boolean
@@ -232,7 +251,7 @@ interface FreeState {
 function freshSandbox(size: WorldSize, seed = 11): FreeState {
   const { w, h } = WORLD_SIZES[size]
   const world = seedSandbox(w, h, seed)
-  const hamlets = size === 'small' ? 3 : size === 'wide' ? 4 : 5
+  const hamlets = size === 'small' ? 6 : size === 'wide' ? 9 : 12
   return {
     size,
     world,
@@ -240,6 +259,7 @@ function freshSandbox(size: WorldSize, seed = 11): FreeState {
     settlements: seedSettlements(world, hamlets, seed),
     activeLineId: null,
     tool: 'rail',
+    building: 'station',
     trains: 1,
     speed: 'normal',
     running: true,
@@ -256,12 +276,15 @@ function deserializeSettlements(raw: unknown, world: World): Settlement[] {
     const x = int(item.x, -1, 0, world.w - 1)
     const z = int(item.z, -1, 0, world.h - 1)
     if (!Number.isInteger(x) || !Number.isInteger(z)) continue
+    const population = Math.max(0, num(item.population, 8))
     out.push({
       id: str(item.id, `s-${x}-${z}`),
       x,
       z,
       name: str(item.name, 'Halt'),
-      population: Math.max(0, num(item.population, 6)),
+      population,
+      peak: Math.max(population, num(item.peak, population)),
+      wasServed: bool(item.wasServed, false),
     })
   }
   return out
@@ -284,7 +307,8 @@ function loadSandbox(): FreeState {
         settlements: deserializeSettlements(raw.settlements, world),
         activeLineId: null,
         tool: oneOf(raw.tool, TOOLS, 'rail'),
-        trains: int(raw.trains, 1, 1, 5),
+        building: isBuilding(raw.building) ? raw.building : 'station',
+        trains: int(raw.trains, 1, 1, MAX_TRAINS),
         speed: oneOf(raw.speed, SPEEDS, 'normal'),
         running: bool(raw.running, true),
         balance: Math.max(0, num(raw.balance, STARTING_FUNDS)),
@@ -358,6 +382,8 @@ export interface GameState {
   freePast: FreeSnapshot[]
   freeFuture: FreeSnapshot[]
   career: Career
+  /** Buildings the campaign has earned, by id. */
+  unlocked: BuildingId[]
   /** Milestone reached this session and not yet dismissed. */
   milestone: string | null
 
@@ -385,6 +411,7 @@ export interface GameState {
   completeDelivery: () => void
 
   setTool: (tool: FreeTool) => void
+  setBuilding: (id: BuildingId) => void
   tapFreeTile: (c: Coord) => void
   setFreeSize: (size: WorldSize) => void
   setTrains: (n: number) => void
@@ -416,6 +443,7 @@ export const useGame = create<GameState>()((set, get) => {
         lines: serializeLines(f.lines),
         settlements: f.settlements,
         tool: f.tool,
+        building: f.building,
         trains: f.trains,
         speed: f.speed,
         running: f.running,
@@ -493,6 +521,7 @@ export const useGame = create<GameState>()((set, get) => {
     freePast: [],
     freeFuture: [],
     career: loadCareer(),
+    unlocked: unlockedBuildings(completedLevels(loadProgress())).map((b) => b.id),
     milestone: null,
 
     /* ------------------------------------------------------------ shared */
@@ -751,8 +780,11 @@ export const useGame = create<GameState>()((set, get) => {
             : report.trackTiles,
         },
       }
-      set({ delivered: true, puzzleRunning: false, progress })
+      const earned = unlockedBuildings(completedLevels(progress))
+      const fresh = earned.filter((b) => !state.unlocked.includes(b.id))
+      set({ delivered: true, puzzleRunning: false, progress, unlocked: earned.map((b) => b.id) })
       persistProgress()
+      if (fresh.length > 0) get().announce(fresh.map((b) => b.name).join(' and ') + ' unlocked')
       sfx('arrive')
       get().setStatus(
         `Arrived at ${level.destinationName} — ${report.stars} star${report.stars === 1 ? '' : 's'}.`,
@@ -767,6 +799,14 @@ export const useGame = create<GameState>()((set, get) => {
       sfx('tool')
       get().setStatus(`${toolInfo(tool).name} selected.`, 'info')
       get().announce(`${toolInfo(tool).name} selected`)
+      persistSandbox()
+    },
+
+    setBuilding: (id) => {
+      set({ free: { ...get().free, building: id, tool: 'build' } })
+      sfx('tool')
+      get().setStatus(buildingById(id).name + ' selected.', 'info')
+      get().announce(buildingById(id).name + ' selected')
       persistSandbox()
     },
 
@@ -864,7 +904,7 @@ export const useGame = create<GameState>()((set, get) => {
             const replacements = removeTileFromLine(line, c)
             const lines = free.lines.flatMap((l) => (l.id === line.id ? replacements : [l]))
             pushFree({
-              world: tile.feature === 'station' ? withTile(free.world, c, { feature: null }) : free.world,
+              world: isBuilding(tile.feature) ? withTile(free.world, c, { feature: null }) : free.world,
               lines,
               activeLineId: replacements[0]?.id ?? null,
               balance: free.balance + COSTS.rail,
@@ -876,7 +916,10 @@ export const useGame = create<GameState>()((set, get) => {
           if (tile.feature) {
             pushFree({ world: withTile(free.world, c, { feature: null }) })
             sfx('erase')
-            get().setStatus(tile.feature === 'station' ? 'Station closed.' : 'Cleared.', 'info')
+            get().setStatus(
+              isBuilding(tile.feature) ? buildingById(tile.feature).name + ' closed.' : 'Cleared.',
+              'info',
+            )
             return
           }
           sfx('deny')
@@ -971,30 +1014,43 @@ export const useGame = create<GameState>()((set, get) => {
           return
         }
 
-        case 'station': {
-          if (tile.feature === 'station') {
+        case 'build': {
+          const def = buildingById(free.building)
+          if (isBuilding(tile.feature)) {
+            const standing = buildingById(tile.feature)
             pushFree({ world: withTile(free.world, c, { feature: null }) })
             sfx('erase')
-            get().setStatus('Station closed.', 'info')
+            get().setStatus(standing.name + ' closed.', 'info')
             return
           }
-          const check = canPlaceFeature(free.world, free.lines, c, 'station')
-          if (!check.ok) {
+          if (!get().unlocked.includes(def.id)) {
             sfx('deny')
-            get().setStatus(check.reason ?? 'No station here.', 'warn')
+            get().setStatus(def.name + ' has not been unlocked yet.', 'warn')
             return
           }
-          if (!afford(COSTS.station)) return
-          const world = withTile(free.world, c, { feature: 'station' })
-          pushFree({ world, balance: free.balance - COSTS.station })
+          if (def.onRail && !occupiedTiles(free.lines).has(keyOf(c))) {
+            sfx('deny')
+            get().setStatus(def.name + ' has to stand on a tile carrying rail.', 'warn')
+            return
+          }
+          if (tile.kind === 'water' || tile.kind === 'rock') {
+            sfx('deny')
+            get().setStatus('Nothing is built on water or bare rock.', 'warn')
+            return
+          }
+          if (!afford(def.cost)) return
+          pushFree({
+            world: withTile(free.world, c, { feature: def.id }),
+            balance: free.balance - def.cost,
+          })
           sfx('place')
           const nearby = free.settlements.filter(
-            (s) => Math.abs(s.x - c.x) + Math.abs(s.z - c.z) <= 2,
+            (s) => Math.abs(s.x - c.x) + Math.abs(s.z - c.z) <= def.range,
           )
           get().setStatus(
             nearby.length > 0
-              ? `Station open, serving ${nearby.map((s) => s.name).join(' and ')}.`
-              : 'Station open. Nothing within two tiles yet — settlement follows a served station.',
+              ? def.name + ' open, serving ' + nearby.map((s) => s.name).join(' and ') + '.'
+              : def.name + ' built. Nothing within reach of it yet.',
             nearby.length > 0 ? 'good' : 'info',
           )
           return
@@ -1019,7 +1075,8 @@ export const useGame = create<GameState>()((set, get) => {
     },
 
     setTrains: (n) => {
-      const trains = Math.max(1, Math.min(5, Math.round(n)))
+      const ceiling = trainCapacity(get().free.world)
+      const trains = Math.max(1, Math.min(ceiling, Math.round(n)))
       set({ free: { ...get().free, trains } })
       persistSandbox()
       get().setStatus(`${trains} train${trains === 1 ? '' : 's'} in service.`, 'info')
@@ -1089,12 +1146,17 @@ export const useGame = create<GameState>()((set, get) => {
         persistCareer()
       }
 
+      // Upkeep is charged continuously rather than in monthly lumps, so the
+      // balance moves smoothly and a network that stops earning starts to bite.
+      const monthly = placedBuildings(free.world).reduce((n, b) => n + b.def.upkeep, 0)
+      const spend = (monthly / MONTH_SECONDS) * dt * speedScale
       set({
         free: {
           ...free,
           settlements: result.settlements,
-          balance: free.balance + result.income,
+          balance: Math.max(0, free.balance + result.income - spend),
           passengers: free.passengers + result.passengers,
+          trains: Math.min(free.trains, trainCapacity(free.world)),
         },
         milestone,
       })
@@ -1118,6 +1180,7 @@ export const useGame = create<GameState>()((set, get) => {
         freePast: [],
         freeFuture: [],
         career: { bestPopulation: 0 },
+        unlocked: unlockedBuildings(new Set()).map((b) => b.id),
         milestone: null,
         tutorialDone: false,
         showTutorial: true,
@@ -1147,5 +1210,8 @@ export const selectStarsTotal = (s: GameState) =>
 export const selectCountry = (s: GameState) =>
   surveyCountry(s.free.world, s.free.lines, s.free.settlements, s.free.trains)
 export const selectPopulation = (s: GameState) => Math.round(totalPopulation(s.free.settlements))
+export const selectTrainCapacity = (s: GameState) => trainCapacity(s.free.world)
+export const selectUpkeep = (s: GameState) =>
+  placedBuildings(s.free.world).reduce((n, b) => n + b.def.upkeep, 0)
 export const sizeUnlocked = (s: GameState, size: WorldSize) =>
   s.career.bestPopulation >= SIZE_UNLOCKS[size]

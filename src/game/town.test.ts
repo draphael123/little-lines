@@ -1,16 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import type { Settlement } from './economy'
+import { makeSettlement, type Settlement } from './economy'
 import { createWorld, keyOf, withTile } from './grid'
 import { claimTiles, planTown, roadStrips, townRadius, trafficRoute } from './town'
 import type { RailLine } from './types'
 
-const town = (population: number, x = 6, z = 6): Settlement => ({
-  id: 'a',
-  x,
-  z,
-  name: 'Ashford',
-  population,
-})
+const town = (population: number, x = 6, z = 6): Settlement =>
+  makeSettlement('a', x, z, 'Ashford', population)
 
 const rail = (tiles: Array<[number, number]>): RailLine[] => [
   { id: 'r', tiles: tiles.map(([x, z]) => ({ x, z })) },
@@ -38,7 +33,7 @@ describe('how far a town spreads', () => {
       [7, 6],
       [7, 7],
     ])
-    const neighbourTown: Settlement = { id: 'b', x: 6, z: 8, name: 'B', population: 10 }
+    const neighbourTown: Settlement = makeSettlement('b', 6, 8, 'B', 10)
     const claimed = claimTiles(world, town(200), lines, [town(200), neighbourTown])
     const keys = new Set(claimed.map(keyOf))
     expect(keys.has('6,5')).toBe(false)

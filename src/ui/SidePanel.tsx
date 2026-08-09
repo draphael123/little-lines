@@ -136,12 +136,14 @@ const STATE_LABEL: Record<SettlementReport['state'], string> = {
   isolated: 'No link',
   growing: 'Growing',
   full: 'At capacity',
+  declining: 'Emptying',
 }
 const STATE_COLOUR: Record<SettlementReport['state'], string> = {
   unserved: 'var(--danger)',
   isolated: 'var(--accent)',
   growing: 'var(--good)',
   full: 'var(--info)',
+  declining: 'var(--danger)',
 }
 
 function CountryBody({ country }: { country: SettlementReport[] }) {

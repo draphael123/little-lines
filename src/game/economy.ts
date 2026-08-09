@@ -15,9 +15,10 @@
  *   · Fares are earned from population actually being served. Nothing ever
  *     goes bankrupt.
  */
+import { buildingById, isBuilding, type BuildingDef } from './buildings'
 import { idx, inBounds, keyOf, tileAt } from './grid'
 import { mulberry32 } from './terrain'
-import type { Coord, RailLine, World } from './types'
+import type { BuildingId, Coord, RailLine, World } from './types'
 
 export type Tier = 'hamlet' | 'village' | 'town' | 'city'
 
@@ -27,6 +28,21 @@ export interface Settlement {
   z: number
   name: string
   population: number
+  /** Largest this place has ever been, for the record and for decline. */
+  peak: number
+  /** True once a working railway has reached it — only then can it empty. */
+  wasServed: boolean
+}
+
+/** A new hamlet, with the bookkeeping fields filled in. */
+export function makeSettlement(
+  id: string,
+  x: number,
+  z: number,
+  name: string,
+  population: number,
+): Settlement {
+  return { id, x, z, name, population, peak: population, wasServed: false }
 }
 
 export const CATCHMENT = 2
@@ -164,7 +180,7 @@ export function buildNetworks(world: World, lines: RailLine[], trainRoster: numb
 
 /* ------------------------------------------------------------- the survey */
 
-export type SettlementState = 'unserved' | 'isolated' | 'growing' | 'full'
+export type SettlementState = 'unserved' | 'isolated' | 'growing' | 'full' | 'declining'
 
 export interface SettlementReport {
   settlement: Settlement
@@ -176,13 +192,40 @@ export interface SettlementReport {
   service: number
   quality: number
   cap: number
-  /** People per second at the current moment. */
+  /** People per second at the current moment. Negative while a town empties. */
   growth: number
+  /** Fare multiplier earned from goods depots and the like. */
+  fares: number
+  /** Public buildings actually working for this place. */
+  amenities: BuildingId[]
   state: SettlementState
   reason: string
 }
 
 const manhattan = (a: Coord, b: Coord) => Math.abs(a.x - b.x) + Math.abs(a.z - b.z)
+
+/** Everything standing on the map, with where it stands. */
+export function placedBuildings(world: World): Array<{ at: Coord; def: BuildingDef }> {
+  const out: Array<{ at: Coord; def: BuildingDef }> = []
+  for (let z = 0; z < world.h; z++) {
+    for (let x = 0; x < world.w; x++) {
+      const feature = world.tiles[idx(world.w, x, z)].feature
+      if (isBuilding(feature)) out.push({ at: { x, z }, def: buildingById(feature) })
+    }
+  }
+  return out
+}
+
+/** Stations proper: the only buildings a settlement can be served by. */
+export const isStation = (id: BuildingId) => id === 'station' || id === 'terminus'
+
+export const MAX_TRAINS = 8
+
+/** How many locomotives may run: the first one, plus one per engine shed. */
+export function trainCapacity(world: World): number {
+  const sheds = placedBuildings(world).filter((b) => b.def.id === 'shed').length
+  return Math.max(1, Math.min(MAX_TRAINS, 1 + sheds))
+}
 
 export function surveyCountry(
   world: World,
@@ -191,96 +234,143 @@ export function surveyCountry(
   trainRoster: number,
 ): SettlementReport[] {
   const networks = buildNetworks(world, lines, trainRoster)
+  const buildings = placedBuildings(world)
 
-  const stationOwner = new Map<string, number>()
+  const onRail = new Set<string>()
+  for (const line of lines) for (const t of line.tiles) onRail.add(keyOf(t))
+
+  const networkOf = new Map<string, number>()
   networks.forEach((net) => {
-    for (const s of net.stations) stationOwner.set(keyOf(s), net.id)
+    for (const key of net.tiles) networkOf.set(key, net.id)
   })
 
-  // Which settlement, if any, does each station serve?
+  // Which station serves which settlement.
+  const stations = buildings.filter((b) => isStation(b.def.id))
   const servedBy = new Map<string, string>()
+  const stationFor = new Map<string, Coord>()
   for (const settlement of settlements) {
     const here = { x: settlement.x, z: settlement.z }
     let best: Coord | null = null
     let bestDistance = Infinity
-    for (const net of networks) {
-      for (const station of net.stations) {
-        const d = manhattan(station, here)
-        if (d <= CATCHMENT && d < bestDistance) {
-          best = station
-          bestDistance = d
-        }
+    for (const station of stations) {
+      const d = manhattan(station.at, here)
+      if (d <= station.def.range && d < bestDistance) {
+        best = station.at
+        bestDistance = d
       }
     }
-    if (best) servedBy.set(keyOf(best), settlement.id)
+    if (best) {
+      servedBy.set(keyOf(best), settlement.id)
+      stationFor.set(settlement.id, best)
+    }
   }
 
   // A network carries traffic only when two of its stations serve
   // different places.
   const networkServes = new Map<number, Set<string>>()
   for (const [stationKey, settlementId] of servedBy) {
-    const netId = stationOwner.get(stationKey)
+    const netId = networkOf.get(stationKey)
     if (netId === undefined) continue
     if (!networkServes.has(netId)) networkServes.set(netId, new Set())
     networkServes.get(netId)!.add(settlementId)
+  }
+  const liveNetwork = (id: number | null | undefined) =>
+    id !== undefined && id !== null && (networkServes.get(id)?.size ?? 0) >= 2
+
+  /**
+   * A public building only works if it can be reached by rail itself: it has
+   * to stand within range of a station on a network that carries people.
+   */
+  const working = buildings.filter((b) => {
+    if (isStation(b.def.id)) return true
+    if (b.def.onRail && !onRail.has(keyOf(b.at))) return false
+    if (b.def.group === 'rail') return liveNetwork(networkOf.get(keyOf(b.at)))
+    return stations.some(
+      (s) =>
+        manhattan(s.at, b.at) <= Math.max(s.def.range, b.def.range) &&
+        liveNetwork(networkOf.get(keyOf(s.at))),
+    )
+  })
+
+  /** Water towers lift the service of the network they stand on. */
+  const serviceBonus = new Map<number, number>()
+  for (const b of working) {
+    const bonus = b.def.effect.service
+    if (!bonus) continue
+    const net = networkOf.get(keyOf(b.at))
+    if (net === undefined) continue
+    serviceBonus.set(net, (serviceBonus.get(net) ?? 0) + bonus)
   }
 
   return settlements.map((settlement) => {
     const here = { x: settlement.x, z: settlement.z }
     const quality = siteQuality(world, here)
-    const cap = populationCap(quality)
     const tier = tierOf(settlement.population)
 
-    let station: Coord | null = null
-    for (const [stationKey, id] of servedBy) {
-      if (id !== settlement.id) continue
-      const [x, z] = stationKey.split(',').map(Number)
-      station = { x, z }
-    }
+    const inRange = working.filter(
+      (b) => !isStation(b.def.id) && manhattan(b.at, here) <= b.def.range,
+    )
+    const amenities = inRange.map((b) => b.def.id)
+    const growthBonus = inRange.reduce((n, b) => n + (b.def.effect.growth ?? 0), 0)
+    const capBonus = inRange.reduce((n, b) => n + (b.def.effect.cap ?? 0), 0)
+    const fares = 1 + inRange.reduce((n, b) => n + (b.def.effect.fares ?? 0), 0)
+    const cap = populationCap(quality) + capBonus
+
+    const station = stationFor.get(settlement.id) ?? null
+    const emptying = settlement.wasServed && settlement.population > FLOOR_POPULATION
 
     if (!station) {
       return {
         settlement, tier, station: null, networkId: null, linked: false,
-        service: 0, quality, cap, growth: 0, state: 'unserved',
-        reason: 'No station within two tiles.',
+        service: 0, quality, cap, fares, amenities,
+        growth: emptying ? -DECLINE_RATE : 0,
+        state: emptying ? ('declining' as const) : ('unserved' as const),
+        reason: emptying
+          ? 'The station has gone, and people are leaving.'
+          : 'No station within reach.',
       }
     }
 
-    const networkId = stationOwner.get(keyOf(station)) ?? null
+    const networkId = networkOf.get(keyOf(station)) ?? null
     const network = networks.find((n) => n.id === networkId) ?? null
-    const partners = networkId === null ? new Set<string>() : (networkServes.get(networkId) ?? new Set())
-    const linked = partners.size >= 2
+    const linked = liveNetwork(networkId)
 
     if (!linked) {
       return {
         settlement, tier, station, networkId, linked: false,
-        service: 0, quality, cap, growth: 0, state: 'isolated',
-        reason: 'The line reaches nowhere else. Run it to a second settlement.',
+        service: 0, quality, cap, fares, amenities,
+        growth: emptying ? -DECLINE_RATE : 0,
+        state: emptying ? ('declining' as const) : ('isolated' as const),
+        reason: emptying
+          ? 'Cut off from everywhere else, and emptying.'
+          : 'The line reaches nowhere else. Run it to a second settlement.',
       }
     }
 
     const stationCount = Math.max(1, network?.stations.length ?? 1)
     const trains = network?.trains ?? 0
-    const service = Math.max(0, Math.min(1, trains / Math.max(1, stationCount / 2)))
+    const bonus = networkId === null ? 0 : (serviceBonus.get(networkId) ?? 0)
+    const service = Math.max(0, Math.min(1, trains / Math.max(1, stationCount / 2) + bonus))
 
     if (service <= 0) {
       return {
         settlement, tier, station, networkId, linked: true,
-        service: 0, quality, cap, growth: 0, state: 'isolated',
+        service: 0, quality, cap, fares, amenities, growth: 0,
+        state: 'isolated' as const,
         reason: 'No train works this network.',
       }
     }
 
     const headroom = Math.max(0, 1 - settlement.population / cap)
-    const growth = BASE_GROWTH * service * quality * headroom
+    const growth = BASE_GROWTH * service * quality * (1 + growthBonus) * headroom
     return {
       settlement, tier, station, networkId, linked: true,
-      service, quality, cap, growth,
-      state: headroom <= 0.02 ? 'full' : 'growing',
+      service, quality, cap, fares, amenities, growth,
+      state: headroom <= 0.02 ? ('full' as const) : ('growing' as const),
       reason:
         headroom <= 0.02
-          ? 'As large as this ground will carry.'
-          : `Served by ${trains} train${trains === 1 ? '' : 's'} across ${stationCount} station${stationCount === 1 ? '' : 's'}.`,
+          ? 'As large as this ground will carry. Build something that raises the ceiling.'
+          : `${trains} train${trains === 1 ? '' : 's'} across ${stationCount} station${stationCount === 1 ? '' : 's'}${amenities.length ? `, plus ${amenities.length} public building${amenities.length === 1 ? '' : 's'}` : ''}.`,
     }
   })
 }
@@ -293,6 +383,10 @@ export function surveyCountry(
 export const BASE_GROWTH = 1.7
 /** Pounds per person per second, at perfect service. */
 export const FARE_RATE = 0.085
+/** People per second lost by a town whose railway has been taken away. */
+export const DECLINE_RATE = 0.6
+/** However badly a place is abandoned, somebody always stays. */
+export const FLOOR_POPULATION = 5
 
 export interface CountryTick {
   settlements: Settlement[]
@@ -315,15 +409,21 @@ export function tickCountry(
   let population = 0
 
   const next = reports.map((report) => {
-    const grown = report.settlement.population + report.growth * step
-    const capped = Math.min(report.cap, grown)
-    population += capped
+    const moved = report.settlement.population + report.growth * step
+    // Growth is bounded by what the ground will carry; decline bottoms out at
+    // the handful of people who never leave.
+    const settled = Math.max(FLOOR_POPULATION, Math.min(report.cap, moved))
+    population += settled
     if (report.state === 'growing' || report.state === 'full') {
-      const carried = report.settlement.population * report.service * step * 0.35
-      passengers += carried
-      income += report.settlement.population * report.service * FARE_RATE * step
+      passengers += report.settlement.population * report.service * step * 0.35
+      income += report.settlement.population * report.service * report.fares * FARE_RATE * step
     }
-    return { ...report.settlement, population: capped }
+    return {
+      ...report.settlement,
+      population: settled,
+      peak: Math.max(report.settlement.peak ?? settled, settled),
+      wasServed: report.settlement.wasServed || report.linked,
+    }
   })
 
   return { settlements: next, income, passengers, population }
@@ -373,7 +473,6 @@ export const STARTING_FUNDS = 1200
 export const COSTS = {
   rail: 12,
   bridge: 70,
-  station: 180,
   terrain: 15,
   tunnel: 220,
   tree: 2,
@@ -405,7 +504,9 @@ export function seedSettlements(world: World, count: number, seed: number, exist
       x: candidate.c.x,
       z: candidate.c.z,
       name: settlementName(candidate.c.x * 131 + candidate.c.z * 977 + seed),
-      population: 6 + Math.floor(rand() * 9),
+      population: 8 + Math.floor(rand() * 9),
+      peak: 0,
+      wasServed: false,
     })
   }
   return chosen

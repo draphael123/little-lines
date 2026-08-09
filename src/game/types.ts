@@ -4,10 +4,24 @@
 export type TileKind = 'meadow' | 'forest' | 'rock' | 'water'
 
 /**
- * Something standing on a tile. Rail is stored separately, and cottages are
- * not here at all — settlement is simulated, never placed.
+ * Everything the player may place. Declared here rather than in `buildings.ts`
+ * so the catalogue can import the world types without a cycle.
  */
-export type Feature = 'tree' | 'station' | null
+export type BuildingId =
+  | 'station'
+  | 'terminus'
+  | 'watertower'
+  | 'shed'
+  | 'depot'
+  | 'market'
+  | 'school'
+  | 'clinic'
+
+/**
+ * Something standing on a tile. Rail is stored separately, and houses, shops
+ * and streets are not here at all — settlement is simulated, never placed.
+ */
+export type Feature = 'tree' | BuildingId | null
 
 export interface Coord {
   x: number
@@ -54,7 +68,7 @@ export type FreeTool =
   | 'tunnel'
   | 'tree'
   | 'water'
-  | 'station'
+  | 'build'
 
 export interface LevelStop extends Coord {
   name: string
