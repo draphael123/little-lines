@@ -6,6 +6,7 @@ import { reportRoute } from './game/scoring'
 import type { Coord, FreeTool, RailLine } from './game/types'
 import { TOOL_INFO, useGame, worldForLevel } from './store/useGame'
 import { TableStage } from './three/TableStage'
+import { RegionStage } from './world/RegionStage'
 import { FieldGuide } from './ui/FieldGuide'
 import { LevelSelect } from './ui/LevelSelect'
 import { RunDock } from './ui/RunDock'
@@ -21,6 +22,7 @@ export default function App() {
   const route = useGame((s) => s.route)
   const free = useGame((s) => s.free)
   const announcement = useGame((s) => s.announcement)
+  const night = useGame((s) => s.night)
 
   const level = useMemo(() => levelById(levelId) ?? LEVELS[0], [levelId])
   const world = mode === 'puzzle' ? worldForLevel(level) : free.world
@@ -53,22 +55,32 @@ export default function App() {
       </a>
 
       <div className="world" id="board" role="region" aria-label="The railway map">
-        <TableStage world={world} />
+        {mode === 'region' ? (
+          <RegionStage seed={1} night={night} />
+        ) : (
+          <TableStage world={world} />
+        )}
       </div>
 
       <div className="hud">
         <TopBar report={report} />
-        <SidePanel
-          level={level}
-          report={report}
-          country={country}
-          world={world}
-          lines={lines}
-          onPick={pick}
-        />
-        <ToolDock />
-        <RunDock level={level} report={report} />
-        <WorldReadout world={world} />
+        {mode === 'region' ? (
+          <RegionNotice />
+        ) : (
+          <>
+            <SidePanel
+              level={level}
+              report={report}
+              country={country}
+              world={world}
+              lines={lines}
+              onPick={pick}
+            />
+            <ToolDock />
+            <RunDock level={level} report={report} />
+            <WorldReadout world={world} />
+          </>
+        )}
       </div>
 
       <Tutorial />
@@ -79,6 +91,33 @@ export default function App() {
         {announcement}
       </p>
     </div>
+  )
+}
+
+/** A plain word about what the new region is, while it is still being built. */
+function RegionNotice() {
+  return (
+    <aside className="side pane" aria-label="The region">
+      <div className="side__head">
+        <h2>The region</h2>
+      </div>
+      <div className="side__body">
+        <p className="lede">
+          <strong>Four kilometres of continuous ground.</strong> No tiles: the land is a real
+          surface, sampled at any point you ask about, with a coast, rolling country and rivers cut
+          by following the ground downhill to the sea.
+        </p>
+        <p className="lede">
+          Drag to travel, wheel to zoom, <strong>W A S D</strong> to pan, and hold shift or drag with
+          the right button to turn. Come right down and the camera flattens out to look along the
+          ground.
+        </p>
+        <p className="lede">
+          Rail you drag as curves, junctions, and towns that sprawl into cities are being built into
+          this. The tile game is still on the other two tabs until they land.
+        </p>
+      </div>
+    </aside>
   )
 }
 

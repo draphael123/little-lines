@@ -56,7 +56,7 @@ import type {
 } from '../game/types'
 import type { CameraPreset } from '../three/viewpoints'
 
-export type Mode = 'puzzle' | 'free'
+export type Mode = 'puzzle' | 'free' | 'region'
 export type StatusTone = 'info' | 'good' | 'warn'
 
 export interface Status {

@@ -27,7 +27,7 @@ export function TopBar({ report }: { report: RouteReport }) {
     <header className="topbar pane">
       <div className="brand">
         <b>Little Lines</b>
-        <i>{mode === 'puzzle' ? 'Survey' : 'Free build'}</i>
+        <i>{mode === 'puzzle' ? 'Survey' : mode === 'free' ? 'Free build' : 'Region'}</i>
       </div>
 
       <nav aria-label="Game modes">
@@ -38,13 +38,18 @@ export function TopBar({ report }: { report: RouteReport }) {
           <button type="button" aria-pressed={mode === 'free'} onClick={() => setMode('free')}>
             Build
           </button>
+          <button type="button" aria-pressed={mode === 'region'} onClick={() => setMode('region')}>
+            Region
+          </button>
         </div>
       </nav>
 
       <div className="spacer" />
 
       <div className="stats">
-        {mode === 'puzzle' ? (
+        {mode === 'region' ? (
+          <Stat icon="grow" value="4 km" unit="continuous" label="region size" />
+        ) : mode === 'puzzle' ? (
           <>
             <Stat icon="rail" value={`${report.trackTiles}`} unit={`of ${report.par}`} label="track laid against par" />
             <Stat
