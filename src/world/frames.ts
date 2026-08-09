@@ -38,8 +38,17 @@ export function keepFramesComing() {
   }
 
   // ResizeObserver is just as quiet in a hidden tab, and that is the other half
-  // of what the canvas is waiting for. A few nudges after mount are enough to
-  // get it measured; once it has a size it stays measured.
-  const nudge = () => window.dispatchEvent(new Event('resize'))
-  for (const delay of [0, 60, 250, 800]) window.setTimeout(nudge, delay)
+  // of what the canvas is waiting for. Nudge until the canvas has been given a
+  // real backing size, rather than at a few guessed delays — the app is code
+  // split, so how long it takes to mount is not something to guess at. An
+  // unmeasured canvas keeps its 300x150 default, which is what this watches for.
+  let attempts = 0
+  const nudge = window.setInterval(() => {
+    const canvas = document.querySelector('canvas')
+    if ((canvas && canvas.width > 300) || attempts++ > 60) {
+      window.clearInterval(nudge)
+      return
+    }
+    window.dispatchEvent(new Event('resize'))
+  }, 200)
 }
