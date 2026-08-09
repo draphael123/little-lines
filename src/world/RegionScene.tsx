@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { MeshReflectorMaterial } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 import {
@@ -8,10 +8,12 @@ import {
   Color,
   ShaderMaterial,
   Vector3,
-  type Mesh,
 } from 'three'
 import { moodFor, type SceneMood } from '../three/palette'
+import type { Vec3 } from './rail'
 import { REGION, generateRegion, heightAt, type Heightfield } from './heightfield'
+import { RailPreview, RailView } from './RailView'
+import { layEdge, type LayResult, type RailNetwork } from './rail'
 import { buildSurface } from './terrainSurface'
 
 /* ------------------------------------------------------------------ ground */
@@ -19,9 +21,13 @@ import { buildSurface } from './terrainSurface'
 export function RegionTerrain({
   field,
   onHover,
+  onDown,
+  onUp,
 }: {
   field: Heightfield
   onHover?: (point: { x: number; z: number } | null) => void
+  onDown?: (point: { x: number; z: number }) => void
+  onUp?: (point: { x: number; z: number }) => void
 }) {
   const geometry = useMemo(() => {
     const surface = buildSurface(field)
@@ -47,6 +53,14 @@ export function RegionTerrain({
         onHover?.({ x: e.point.x, z: e.point.z })
       }}
       onPointerOut={() => onHover?.(null)}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return
+        onDown?.({ x: e.point.x, z: e.point.z })
+      }}
+      onPointerUp={(e) => {
+        if (e.button !== 0) return
+        onUp?.({ x: e.point.x, z: e.point.z })
+      }}
     >
       <meshStandardMaterial vertexColors roughness={0.97} metalness={0} />
     </mesh>
@@ -135,7 +149,7 @@ const PAN_KEYS: Record<string, [number, number]> = {
  * to travel, wheel to zoom, and the pitch flattens as you descend so that
  * coming down to street level actually looks along the ground.
  */
-export function RegionCamera({ field }: { field: Heightfield }) {
+export function RegionCamera({ field, enabled = true }: { field: Heightfield; enabled?: boolean }) {
   const camera = useThree((s) => s.camera)
   const gl = useThree((s) => s.gl)
   /** Point on the ground the camera is looking at. */
@@ -148,6 +162,9 @@ export function RegionCamera({ field }: { field: Heightfield }) {
   useEffect(() => {
     const el = gl.domElement
     const down = (e: PointerEvent) => {
+      // While the rail tool is out, the left button draws track rather than
+      // travelling; the right button still turns the view.
+      if (!enabled && e.button === 0) return
       dragging.current = { x: e.clientX, y: e.clientY, button: e.button }
     }
     const up = () => {
@@ -189,7 +206,7 @@ export function RegionCamera({ field }: { field: Heightfield }) {
       el.removeEventListener('wheel', wheel)
       el.removeEventListener('contextmenu', context)
     }
-  }, [gl])
+  }, [gl, enabled])
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -245,10 +262,58 @@ export function RegionCamera({ field }: { field: Heightfield }) {
 
 /* ------------------------------------------------------------------ scene */
 
-export function RegionScene({ seed, night }: { seed: number; night: boolean }) {
+export interface RegionSceneProps {
+  seed: number
+  night: boolean
+  network: RailNetwork
+  onLay: (result: LayResult) => void
+  onStatus: (text: string, ok: boolean) => void
+  /** True while the rail tool is selected; otherwise dragging just pans. */
+  laying: boolean
+}
+
+export function RegionScene({
+  seed,
+  night,
+  network,
+  onLay,
+  onStatus,
+  laying,
+}: RegionSceneProps) {
   const field = useMemo(() => generateRegion({ seed }), [seed])
   const mood = moodFor(night)
-  const hovered = useRef<Mesh | null>(null)
+  const [preview, setPreview] = useState<{ points: Vec3[]; ok: boolean } | null>(null)
+  const anchor = useRef<{ x: number; z: number } | null>(null)
+
+  const beginDrag = (point: { x: number; z: number }) => {
+    if (!laying) return
+    anchor.current = point
+    setPreview(null)
+  }
+
+  const dragTo = (point: { x: number; z: number } | null) => {
+    if (!laying || !anchor.current || !point) return
+    const result = layEdge(field, network, anchor.current, point)
+    setPreview(
+      result.ok && result.edge
+        ? { points: result.edge.points, ok: true }
+        : { points: straight(field, anchor.current, point), ok: false },
+    )
+  }
+
+  const endDrag = (point: { x: number; z: number }) => {
+    if (!laying || !anchor.current) return
+    const from = anchor.current
+    anchor.current = null
+    setPreview(null)
+    const result = layEdge(field, network, from, point)
+    if (!result.ok) {
+      onStatus(result.reason ?? 'That line cannot be built.', false)
+      return
+    }
+    onLay(result)
+    onStatus(`${Math.round(result.edge!.length)} m of line laid.`, true)
+  }
 
   return (
     <>
@@ -275,8 +340,23 @@ export function RegionScene({ seed, night }: { seed: number; night: boolean }) {
 
       <Sky mood={mood} />
       <Sea mood={mood} level={field.seaLevel} />
-      <RegionTerrain field={field} onHover={() => (hovered.current = null)} />
-      <RegionCamera field={field} />
+      <RegionTerrain field={field} onHover={dragTo} onDown={beginDrag} onUp={endDrag} />
+      <RailView field={field} network={network} />
+      <RailPreview points={preview?.points ?? null} ok={preview?.ok ?? true} />
+      <RegionCamera field={field} enabled={!laying} />
     </>
   )
+}
+
+/** A straight run along the ground, used to show a refused line in red. */
+function straight(field: Heightfield, a: { x: number; z: number }, b: { x: number; z: number }): Vec3[] {
+  const out: Vec3[] = []
+  const steps = 24
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps
+    const x = a.x + (b.x - a.x) * t
+    const z = a.z + (b.z - a.z) * t
+    out.push([x, heightAt(field, x, z) + 1, z])
+  }
+  return out
 }

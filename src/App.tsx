@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { initAudio } from './audio/engine'
 import { surveyCountry } from './game/economy'
 import { LEVELS, levelById } from './game/levels'
@@ -7,6 +7,8 @@ import type { Coord, FreeTool, RailLine } from './game/types'
 import { TOOL_INFO, useGame, worldForLevel } from './store/useGame'
 import { TableStage } from './three/TableStage'
 import { RegionStage } from './world/RegionStage'
+import { RegionPanel } from './world/RegionPanel'
+import { addEdge, emptyNetwork, type LayResult, type RailNetwork } from './world/rail'
 import { FieldGuide } from './ui/FieldGuide'
 import { LevelSelect } from './ui/LevelSelect'
 import { RunDock } from './ui/RunDock'
@@ -23,6 +25,14 @@ export default function App() {
   const free = useGame((s) => s.free)
   const announcement = useGame((s) => s.announcement)
   const night = useGame((s) => s.night)
+
+  // The continuous region keeps its own state while it is being built out.
+  const [network, setNetwork] = useState<RailNetwork>(emptyNetwork)
+  const [laying, setLaying] = useState(true)
+  const [regionStatus, setRegionStatus] = useState({
+    text: 'Drag across the country to lay a line.',
+    ok: true,
+  })
 
   const level = useMemo(() => levelById(levelId) ?? LEVELS[0], [levelId])
   const world = mode === 'puzzle' ? worldForLevel(level) : free.world
@@ -56,7 +66,14 @@ export default function App() {
 
       <div className="world" id="board" role="region" aria-label="The railway map">
         {mode === 'region' ? (
-          <RegionStage seed={1} night={night} />
+          <RegionStage
+            seed={1}
+            night={night}
+            network={network}
+            laying={laying}
+            onLay={(result: LayResult) => setNetwork((n) => addEdge(n, result))}
+            onStatus={(text, ok) => setRegionStatus({ text, ok })}
+          />
         ) : (
           <TableStage world={world} />
         )}
@@ -65,7 +82,16 @@ export default function App() {
       <div className="hud">
         <TopBar report={report} />
         {mode === 'region' ? (
-          <RegionNotice />
+          <RegionPanel
+            network={network}
+            laying={laying}
+            status={regionStatus}
+            onLaying={setLaying}
+            onClear={() => {
+              setNetwork(emptyNetwork())
+              setRegionStatus({ text: 'Every line lifted.', ok: true })
+            }}
+          />
         ) : (
           <>
             <SidePanel
@@ -91,33 +117,6 @@ export default function App() {
         {announcement}
       </p>
     </div>
-  )
-}
-
-/** A plain word about what the new region is, while it is still being built. */
-function RegionNotice() {
-  return (
-    <aside className="side pane" aria-label="The region">
-      <div className="side__head">
-        <h2>The region</h2>
-      </div>
-      <div className="side__body">
-        <p className="lede">
-          <strong>Four kilometres of continuous ground.</strong> No tiles: the land is a real
-          surface, sampled at any point you ask about, with a coast, rolling country and rivers cut
-          by following the ground downhill to the sea.
-        </p>
-        <p className="lede">
-          Drag to travel, wheel to zoom, <strong>W A S D</strong> to pan, and hold shift or drag with
-          the right button to turn. Come right down and the camera flattens out to look along the
-          ground.
-        </p>
-        <p className="lede">
-          Rail you drag as curves, junctions, and towns that sprawl into cities are being built into
-          this. The tile game is still on the other two tabs until they land.
-        </p>
-      </div>
-    </aside>
   )
 }
 

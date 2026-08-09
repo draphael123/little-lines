@@ -3,10 +3,10 @@ import { Canvas } from '@react-three/fiber'
 import { ACESFilmicToneMapping, PCFSoftShadowMap } from 'three'
 import { SceneBoundary } from '../three/SceneBoundary'
 import { detectWebGL } from '../three/webgl'
-import { RegionScene } from './RegionScene'
+import { RegionScene, type RegionSceneProps } from './RegionScene'
 
 /** The canvas for the continuous region. */
-export function RegionStage({ seed, night }: { seed: number; night: boolean }) {
+export function RegionStage(props: RegionSceneProps) {
   const supported = useMemo(() => detectWebGL(), [])
   const [failed, setFailed] = useState<string | null>(null)
 
@@ -39,7 +39,7 @@ export function RegionStage({ seed, night }: { seed: number; night: boolean }) {
       >
         <SceneBoundary onError={setFailed}>
           <Suspense fallback={null}>
-            <RegionScene seed={seed} night={night} />
+            <RegionScene {...props} />
           </Suspense>
         </SceneBoundary>
       </Canvas>
