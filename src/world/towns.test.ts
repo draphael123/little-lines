@@ -22,7 +22,12 @@ import {
   type Settlement,
 } from './towns'
 
-const field = generateRegion({ seed: 3 })
+/**
+ * Gentle country. These tests are about who gets served and how a place grows,
+ * not about hills — on real relief a line between two fixed points is often
+ * legitimately refused, which would couple settlement rules to terrain tuning.
+ */
+const field = generateRegion({ seed: 3, relief: 20 })
 
 const place = (kind: Structure['kind'], x: number, z: number, id = `${kind}-${x}-${z}`): Structure => ({
   id,

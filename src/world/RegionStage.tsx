@@ -1,8 +1,8 @@
 import { Suspense, useMemo, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { ACESFilmicToneMapping, PCFSoftShadowMap } from 'three'
-import { SceneBoundary } from '../three/SceneBoundary'
-import { detectWebGL } from '../three/webgl'
+import { SceneBoundary } from './SceneBoundary'
+import { detectWebGL } from './webgl'
 import { RegionScene, type RegionSceneProps } from './RegionScene'
 
 /** The canvas for the continuous region. */

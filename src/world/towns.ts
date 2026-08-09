@@ -116,9 +116,15 @@ export interface TownReport {
   reason: string
 }
 
-export const BASE_GROWTH = 3.4
+/**
+ * Rates are per second of running time, and a month is MONTH_SECONDS long — so
+ * BASE_GROWTH of 0.34 is roughly nine people a month arriving at a well served
+ * place with room to grow. That is deliberately slow: a hamlet should take a
+ * year of play to become a village, not eight seconds.
+ */
+export const BASE_GROWTH = 0.34
 export const FARE_RATE = 0.05
-export const DECLINE_RATE = 1.2
+export const DECLINE_RATE = 0.14
 export const FLOOR_POPULATION = 8
 export const MAX_TRAINS = 12
 

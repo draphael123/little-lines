@@ -19,9 +19,18 @@ import {
 
 const field = generateRegion({ seed: 3 })
 
+/**
+ * Gentle country for the tests that are about the shape of the graph rather
+ * than the shape of the land. Junctions pin both ends of a line, so on real
+ * hills a thousand-metre run between two fixed points is often legitimately
+ * too steep — which would make retuning the terrain break tests that have
+ * nothing to do with terrain.
+ */
+const gentle = generateRegion({ seed: 3, relief: 20 })
+
 /** Lay a line and commit it, failing loudly if the ground refused it. */
 function lay(net: RailNetwork, from: [number, number], to: [number, number]): RailNetwork {
-  const result = layEdge(field, net, { x: from[0], z: from[1] }, { x: to[0], z: to[1] })
+  const result = layEdge(gentle, net, { x: from[0], z: from[1] }, { x: to[0], z: to[1] })
   expect(result.ok, result.reason).toBe(true)
   return addEdge(net, result)
 }
@@ -92,9 +101,9 @@ describe('laying a line', () => {
 
   it('refuses lines that are too short, too long, or off the region', () => {
     const net = emptyNetwork()
-    expect(layEdge(field, net, { x: 0, z: 0 }, { x: 10, z: 0 }).ok).toBe(false)
-    expect(layEdge(field, net, { x: -1900, z: 0 }, { x: 1900, z: 1900 }).ok).toBe(false)
-    expect(layEdge(field, net, { x: 0, z: 0 }, { x: 99999, z: 0 }).ok).toBe(false)
+    expect(layEdge(gentle, net, { x: 0, z: 0 }, { x: 10, z: 0 }).ok).toBe(false)
+    expect(layEdge(gentle, net, { x: -1900, z: 0 }, { x: 1900, z: 1900 }).ok).toBe(false)
+    expect(layEdge(gentle, net, { x: 0, z: 0 }, { x: 99999, z: 0 }).ok).toBe(false)
   })
 
   it('lets an ordinary line across rolling country through', () => {
@@ -136,7 +145,7 @@ describe('junctions', () => {
   it('snaps a new line onto an existing node instead of doubling up', () => {
     let net = lay(emptyNetwork(), [-500, 0], [200, 0])
     const end = Object.values(net.nodes).find((n) => Math.abs(n.x - 200) < 1)!
-    const near = layEdge(field, net, { x: end.x + 20, z: end.z + 20 }, { x: 700, z: 400 })
+    const near = layEdge(gentle, net, { x: end.x + 20, z: end.z + 20 }, { x: 700, z: 400 })
     expect(near.ok, near.reason).toBe(true)
     // only the far end is new — the near end joined the existing node
     expect(near.created).toHaveLength(1)
@@ -154,7 +163,7 @@ describe('junctions', () => {
   it('refuses a line from a junction back to itself', () => {
     const net = lay(emptyNetwork(), [-500, 0], [200, 0])
     const node = Object.values(net.nodes)[0]
-    const result = layEdge(field, net, { x: node.x, z: node.z }, { x: node.x + 30, z: node.z + 20 })
+    const result = layEdge(gentle, net, { x: node.x, z: node.z }, { x: node.x + 30, z: node.z + 20 })
     expect(result.ok).toBe(false)
   })
 })

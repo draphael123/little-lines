@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   REGION,
   RESOLUTION,
+  SPACING,
   generateRegion,
   gridToWorld,
   heightAt,
@@ -37,7 +38,9 @@ describe('the region', () => {
   })
 
   it('reaches real relief without absurd cliffs everywhere', () => {
-    const max = Math.max(...field.heights)
+    // spreading a quarter-million element array into Math.max blows the stack
+    let max = -Infinity
+    for (const h of field.heights) if (h > max) max = h
     expect(max).toBeGreaterThan(60)
     let steep = 0
     for (let i = 0; i < 400; i++) {
@@ -56,13 +59,15 @@ describe('sampling anywhere, not just on a lattice', () => {
   })
 
   it('interpolates between samples rather than snapping', () => {
+    // inside a single lattice cell, where bilinear interpolation is monotonic
+    // along a straight line; across a cell boundary it need not be
     const a = heightAt(field, 100, 100)
-    const b = heightAt(field, 108, 100)
-    const mid = heightAt(field, 104, 100)
+    const b = heightAt(field, 100 + SPACING * 0.5, 100)
+    const mid = heightAt(field, 100 + SPACING * 0.25, 100)
     expect(mid).toBeGreaterThanOrEqual(Math.min(a, b) - 1e-6)
     expect(mid).toBeLessThanOrEqual(Math.max(a, b) + 1e-6)
     // and it genuinely varies at sub-sample distances
-    expect(Math.abs(heightAt(field, 100, 100) - heightAt(field, 103, 100))).toBeGreaterThan(0)
+    expect(Math.abs(a - heightAt(field, 100 + SPACING * 0.2, 100))).toBeGreaterThan(0)
   })
 
   it('is continuous: tiny steps never jump', () => {
@@ -145,9 +150,9 @@ describe('the drawable surface', () => {
   })
 
   it('paints steep ground as rock and the waterline as sand', () => {
-    const flat = groundColour(30, 0.02, 0)
-    const cliff = groundColour(30, 1.1, 0)
-    const beach = groundColour(0.5, 0.02, 0)
+    const flat = groundColour(30, 0.02, 0, 0.2)
+    const cliff = groundColour(30, 1.1, 0, 0.2)
+    const beach = groundColour(0.5, 0.02, 0, 0.003)
     // rock is greyer: its channels sit closer together than grass
     const spread = (c: number[]) => Math.max(...c) - Math.min(...c)
     expect(spread(cliff)).toBeLessThan(spread(flat))
@@ -155,9 +160,14 @@ describe('the drawable surface', () => {
   })
 
   it('keeps every colour channel in range', () => {
+    // one assertion, not eight hundred thousand of them
+    let worstLow = 1
+    let worstHigh = 0
     for (const c of surface.colors) {
-      expect(c).toBeGreaterThanOrEqual(0)
-      expect(c).toBeLessThanOrEqual(1)
+      if (c < worstLow) worstLow = c
+      if (c > worstHigh) worstHigh = c
     }
+    expect(worstLow).toBeGreaterThanOrEqual(0)
+    expect(worstHigh).toBeLessThanOrEqual(1)
   })
 })

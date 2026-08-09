@@ -1,62 +1,34 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import { initAudio } from './audio/engine'
-import { surveyCountry } from './game/economy'
-import { LEVELS, levelById } from './game/levels'
-import { reportRoute } from './game/scoring'
-import type { Coord, FreeTool, RailLine } from './game/types'
-import { TOOL_INFO, useGame, worldForLevel } from './store/useGame'
-import { TableStage } from './three/TableStage'
+import { selectReports, useRegion } from './store/useRegion'
+import { RegionDock, RegionPanel, RegionReadout, RegionTopBar } from './ui/RegionHUD'
+import { RegionGuide, RegionTutorial } from './ui/RegionTutorial'
 import { RegionStage } from './world/RegionStage'
-import { RegionPanel } from './world/RegionPanel'
-import { addEdge, emptyNetwork, type LayResult, type RailNetwork } from './world/rail'
-import { FieldGuide } from './ui/FieldGuide'
-import { LevelSelect } from './ui/LevelSelect'
-import { RunDock } from './ui/RunDock'
-import { SidePanel } from './ui/SidePanel'
-import { ToolDock } from './ui/ToolDock'
-import { TopBar } from './ui/TopBar'
-import { Tutorial } from './ui/Tutorial'
-import { WorldReadout } from './ui/WorldReadout'
 
 export default function App() {
-  const mode = useGame((s) => s.mode)
-  const levelId = useGame((s) => s.levelId)
-  const route = useGame((s) => s.route)
-  const free = useGame((s) => s.free)
-  const announcement = useGame((s) => s.announcement)
-  const night = useGame((s) => s.night)
+  const seed = useRegion((s) => s.seed)
+  const night = useRegion((s) => s.night)
+  const network = useRegion((s) => s.network)
+  const structures = useRegion((s) => s.structures)
+  const settlements = useRegion((s) => s.settlements)
+  const tool = useRegion((s) => s.tool)
+  const view = useRegion((s) => s.view)
+  const lift = useRegion((s) => s.lift)
+  const trains = useRegion((s) => s.trains)
+  const speed = useRegion((s) => s.speed)
+  const running = useRegion((s) => s.running)
+  const announcement = useRegion((s) => s.announcement)
 
-  // The continuous region keeps its own state while it is being built out.
-  const [network, setNetwork] = useState<RailNetwork>(emptyNetwork)
-  const [laying, setLaying] = useState(true)
-  const [regionStatus, setRegionStatus] = useState({
-    text: 'Drag across the country to lay a line.',
-    ok: true,
-  })
-
-  const level = useMemo(() => levelById(levelId) ?? LEVELS[0], [levelId])
-  const world = mode === 'puzzle' ? worldForLevel(level) : free.world
-  const report = useMemo(() => reportRoute(worldForLevel(level), level, route), [level, route])
-
-  const lines = useMemo<RailLine[]>(
-    () => (mode === 'puzzle' ? (route.length ? [{ id: 'campaign', tiles: route }] : []) : free.lines),
-    [mode, route, free.lines],
+  // The survey is derived, so it is recomputed from exactly the things that
+  // shape it rather than on every store change.
+  const reports = useMemo(
+    () => selectReports({ network, structures, settlements, trains } as Parameters<typeof selectReports>[0]),
+    [network, structures, settlements, trains],
   )
 
-  const country = useMemo(
-    () => (mode === 'free' ? surveyCountry(free.world, free.lines, free.settlements, free.trains) : []),
-    [mode, free.world, free.lines, free.settlements, free.trains],
-  )
-
-  useKeyboardShortcuts()
+  useShortcuts()
+  useClock()
   useAudioUnlock()
-  useCountryClock()
-
-  const pick = (c: Coord) => {
-    const state = useGame.getState()
-    if (state.mode === 'puzzle') state.tapPuzzleTile(c)
-    else state.tapFreeTile(c)
-  }
 
   return (
     <div className="game">
@@ -64,54 +36,37 @@ export default function App() {
         Skip to the map
       </a>
 
-      <div className="world" id="board" role="region" aria-label="The railway map">
-        {mode === 'region' ? (
-          <RegionStage
-            seed={1}
-            night={night}
-            network={network}
-            laying={laying}
-            onLay={(result: LayResult) => setNetwork((n) => addEdge(n, result))}
-            onStatus={(text, ok) => setRegionStatus({ text, ok })}
-          />
-        ) : (
-          <TableStage world={world} />
-        )}
+      <div className="world" id="board" role="region" aria-label="The region">
+        <RegionStage
+          seed={seed}
+          night={night}
+          network={network}
+          structures={structures}
+          settlements={settlements}
+          tool={tool}
+          view={view}
+          lift={lift}
+          trains={trains}
+          speed={speed}
+          running={running}
+          onLay={(result) => useRegion.getState().lay(result)}
+          onAdjust={(edgeId, delta) => useRegion.getState().adjust(edgeId, delta)}
+          onPlace={(x, z, y) => useRegion.getState().place(x, z, y)}
+          onDemolish={(x, z) => useRegion.getState().demolish(x, z)}
+          onStatus={(text, ok) => useRegion.getState().setStatus(text, ok)}
+          onHover={(p) => useRegion.getState().setHovered(p)}
+        />
       </div>
 
       <div className="hud">
-        <TopBar report={report} />
-        {mode === 'region' ? (
-          <RegionPanel
-            network={network}
-            laying={laying}
-            status={regionStatus}
-            onLaying={setLaying}
-            onClear={() => {
-              setNetwork(emptyNetwork())
-              setRegionStatus({ text: 'Every line lifted.', ok: true })
-            }}
-          />
-        ) : (
-          <>
-            <SidePanel
-              level={level}
-              report={report}
-              country={country}
-              world={world}
-              lines={lines}
-              onPick={pick}
-            />
-            <ToolDock />
-            <RunDock level={level} report={report} />
-            <WorldReadout world={world} />
-          </>
-        )}
+        <RegionTopBar />
+        <RegionPanel reports={reports} />
+        <RegionDock />
+        <RegionReadout />
       </div>
 
-      <Tutorial />
-      <FieldGuide />
-      <LevelSelect />
+      <RegionTutorial />
+      <RegionGuide />
 
       <p aria-live="polite" role="status" className="sr-only">
         {announcement}
@@ -120,51 +75,41 @@ export default function App() {
   )
 }
 
-/** Number keys pick a tool; the usual editing shortcuts work everywhere else. */
-function useKeyboardShortcuts() {
+const TOOL_KEYS = ['look', 'rail', 'raise', 'lower', 'build', 'demolish'] as const
+
+function useShortcuts() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null
       if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return
-      const state = useGame.getState()
-      if (state.showTutorial || state.showFieldGuide || state.showLevels) return
+      const state = useRegion.getState()
+      if (state.showTutorial || state.showGuide) return
 
       const digit = Number(event.key)
-      if (state.mode === 'free' && digit >= 1 && digit <= TOOL_INFO.length) {
+      if (digit >= 1 && digit <= TOOL_KEYS.length) {
         event.preventDefault()
-        state.setTool(TOOL_INFO[digit - 1].id as FreeTool)
+        state.setTool(TOOL_KEYS[digit - 1])
         return
       }
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
-        event.preventDefault()
-        if (event.shiftKey) state.redo()
-        else state.undo()
-        return
-      }
-      // W A S D pan the camera, so only the remaining letters are shortcuts.
       switch (event.key.toLowerCase()) {
-        case 'h':
-          if (state.mode === 'puzzle') {
-            event.preventDefault()
-            state.askHint()
-          }
-          break
-        case 'n':
-          event.preventDefault()
-          state.setNight(!state.night)
-          break
         case ' ':
           event.preventDefault()
-          state.toggleRun()
+          state.setRunning(!state.running)
           break
-        case '[':
-          state.setCamera('west')
+        case 'n':
+          state.setNight(!state.night)
           break
-        case ']':
-          state.setCamera('east')
+        case 'f':
+          state.setView(state.view === 'follow' ? 'free' : 'follow')
           break
-        case '\\':
-          state.setCamera('home')
+        case 'c':
+          state.setView(state.view === 'cab' ? 'free' : 'cab')
+          break
+        case 'q':
+          if (state.tool === 'rail') state.setLift(state.lift - 4)
+          break
+        case 'e':
+          if (state.tool === 'rail') state.setLift(state.lift + 4)
           break
       }
     }
@@ -174,30 +119,29 @@ function useKeyboardShortcuts() {
 }
 
 /**
- * The world clock. Time only passes while the lines are running, and the tick
- * is driven from real elapsed time rather than a fixed step so a throttled
- * background tab resumes sensibly. Deliberately independent of the render
- * loop: the country keeps growing even without a canvas.
+ * The clock. Time only passes while the trains are running, and the tick is
+ * driven from real elapsed time so a throttled background tab resumes sensibly
+ * rather than jumping. Deliberately outside the render loop, so the country
+ * keeps growing even without a canvas.
  */
-function useCountryClock() {
-  const mode = useGame((s) => s.mode)
-  const running = useGame((s) => s.free.running)
+function useClock() {
+  const running = useRegion((s) => s.running)
   useEffect(() => {
-    if (mode !== 'free' || !running) return
+    if (!running) return
     let last = performance.now()
     const id = window.setInterval(() => {
       const now = performance.now()
       const dt = Math.min(1.5, (now - last) / 1000)
       last = now
-      useGame.getState().advanceCountry(dt)
-    }, 400)
+      useRegion.getState().advance(dt)
+    }, 350)
     return () => window.clearInterval(id)
-  }, [mode, running])
+  }, [running])
 }
 
 /** Browsers only allow an audio context after a gesture; take the first one. */
 function useAudioUnlock() {
-  const audio = useGame((s) => s.audio)
+  const audio = useRegion((s) => s.audio)
   useEffect(() => {
     if (!audio.music && !audio.sfx) return
     const unlock = () => {

@@ -1,46 +1,50 @@
 # Little Lines
 
-A cozy 3D railway route-building game on a surveyor's table. Eight hand-cut survey puzzles,
-and a persistent free-build country that grows around whatever railway you give it.
+A cozy railway builder over four kilometres of open country. You never build a house, a shop or
+a street — you build the railway and the things that serve it, and the country arranges itself
+around what you have built.
 
 Built with React 19, TypeScript, Three.js, React Three Fiber and Drei.
 
 ---
 
-## The two halves
+## The idea
 
-### Puzzle Post — eight surveys
+The region is one continuous landscape: hills, river valleys and a coast, four kilometres square
+at metre scale. Scattered across it are a dozen hamlets, sitting where people would actually
+settle — in a hollow, out of the wind, within reach of water. Left alone they stay hamlets
+forever.
 
-Connect a depot to a named destination across carved miniature terrain. Rail may climb or fall
-only one elevation level per length; bare rock blocks construction; rivers cost bridges from a
-fixed timber budget; some surveys insist the line calls at named halts along the way.
+A place grows only when:
 
-Three stars at or under par, two within two lengths of par, one for arriving at all. Undo, redo
-and a solver-backed hint are always available, and campaign progress is kept in the browser.
-
-Every level's par is checked against a breadth-first solver in the test suite, so a survey can
-never ship impossible or accidentally generous — see `src/game/campaign.test.ts`.
-
-### Free Build — the line makes the country
-
-**You never build a town.** The table starts with a few hamlets sitting on likely ground —
-flat, sheltered, within sight of water. Each one grows only when:
-
-1. a **station** stands within two tiles of it, **and**
+1. a **station** stands within reach of it, **and**
 2. that station shares a **network** with a station serving somewhere else.
 
-A loop around a single hamlet carries nobody. Lines that touch anywhere form one network, so
+A line that reaches nowhere else carries nobody. Lines that touch anywhere form one network, so
 junctions genuinely connect. Service thins out when a network has more stations than its trains
-can work, and terrain matters: flat meadow near water thrives, high or rock-hemmed ground grows
-slowly and caps out small — but nowhere is ever ruled out.
+can work, and the ground still matters: a sheltered valley floor near water grows well, exposed
+high ground grows slowly and caps out small.
 
-Money is light and there is no failure state. Track costs £12 a length, £70 over water, ground
-works £15, a station £180, a tunnel £220; fares arrive continuously from the population you
-actually carry. A thin account just means waiting for the traffic.
+Everything you eventually see — the streets, the terraces, the tall buildings in the middle of a
+city — appeared because a railway made the place worth living in. Take the station away and the
+place empties again.
 
-Time passes **only while the trains are running**, so the run/stop button is the play/pause of
-the whole world. The largest country you have ever grown is remembered across worlds and opens
-the wide table at 120 people and the grand table at 350.
+Time passes **only while the trains are running**, so run/hold is the play/pause of the world.
+
+## Building a railway
+
+Rail is a graph of nodes and curves, not a grid. You drag a line across the country and it is
+laid as a cubic Bézier that keeps its tangent through a junction, so lines meet smoothly.
+
+The vertical profile is solved rather than draped: the line is smoothed and then clamped to a
+ruling gradient of **4%**, sweeping forwards and backwards until it converges. Free ends are
+allowed to settle into a cutting or up onto an embankment; only a junction pins a height, because
+a junction has to meet the line already there. Anything that still cannot be worked at 4% is
+refused with the reason. Where the profile runs clear of the ground the line is carried on a
+viaduct, and viaduct costs more per metre.
+
+`Q` / `E` — or the raise and lower tools — lift the whole line off the ground before you commit
+it, which is how you get across a valley or under a shoulder of hill.
 
 ---
 
@@ -68,16 +72,16 @@ npm run dev
 
 | Input | Effect |
 | --- | --- |
-| Click a tile | Lay track (puzzle) or use the current tool (free build) |
-| Click the last tile again | Lift that length |
-| Drag / scroll | Orbit and zoom the table |
-| `1`–`8` | Free build tools |
-| `[` `\` `]` | West, home and east viewpoints |
-| `H` | Hint (puzzle mode) |
+| Drag | Lay a line (rail tool), or travel over the country (look tool) |
+| Right-drag / `Shift`-drag | Turn the view |
+| Scroll | Zoom |
+| `W` `A` `S` `D` / arrows | Travel |
+| `1`–`6` | Look, rail, raise, lower, build, clear |
+| `Q` / `E` | Lower or raise the line about to be laid |
+| `Space` | Run or hold the trains |
+| `F` | Follow a train |
+| `C` | Ride in the cab |
 | `N` | Day / night |
-| `R` | Run or hold |
-| `Ctrl`/`Cmd` + `Z`, `+Shift` | Undo, redo |
-| Arrow keys | Move between tiles in the keyboard survey grid |
 
 ---
 
@@ -85,66 +89,61 @@ npm run dev
 
 ```
 src/
-  game/         pure rules — no renderer, no React
-    types.ts        tiles, worlds, lines, levels
-    grid.ts         coordinates and world construction
-    track.ts        what rail may do between two tiles
-    terrain.ts      elevation tools, grade protection, landscape growth
-    economy.ts      settlement, networks, service, fares, milestones
-    solver.ts       breadth-first route finding with bridges and required stops
-    scoring.ts      par, stars, the dispatch stages
-    levels.ts       the eight surveys, authored as row strings
-    serialize.ts    compact world/line encoding for storage
-    save.ts         defensive localStorage
-  three/        the 3D table
-    geometry.ts     all model-railway maths, testable without Three.js
-    Terrain.tsx     instanced carved blocks with a shader-carved earth side
-    TrackLines.tsx  sleepers, railheads, bridge decks and trestles
-    Trains.tsx      shuttles, loops, station pauses
+  world/        the region — rules, geometry and the scene
+    heightfield.ts    the land: noise, coast, river carving, sampling, siting
+    terrainSurface.ts one indexed mesh with vertex colours by height and slope
+    rail.ts           the rail graph: Béziers, junctions, the gradient solver
+    trackMesh.ts      ballast, sleepers, railheads, viaduct piers
+    towns.ts          who is served, who grows, fares and upkeep
+    townLayout.ts     streets and the buildings that line them
+    buildings.ts      what you can build, what it costs, what it unlocks
+    trainRun.ts       running a train along a path and reporting its pose
+    scatter.ts        woodland
+    RegionScene.tsx   the scene, the tools and the three cameras
     ...
-  ui/           the interface
   store/        one zustand store
+  ui/           the HUD, the tutorial and the field guide
+  audio/        procedural sound
 ```
 
 Two deliberate architectural lines:
 
-**The rules never import a renderer.** Everything in `src/game` and `src/three/geometry.ts` is
-pure data in, pure data out. That is why the country keeps growing on a machine with no WebGL,
-and why 182 tests can cover the whole simulation without a canvas.
+**The rules never import a renderer.** Everything the country does — settlement, service,
+growth, fares, gradients, river carving — is pure data in, pure data out. That is why the
+simulation can be exercised without a canvas, and why the whole test suite runs headless.
 
-**The 3D maths is separated from the 3D components.** `src/three/geometry.ts` computes rail
-polylines, bridge deck interpolation, mesh buffers and train poses; the R3F components only
-mount what it returns.
+**The geometry is separated from the components.** `trackMesh.ts`, `townLayout.ts`,
+`terrainSurface.ts` and `trainRun.ts` compute buffers and poses; the R3F components only mount
+what they return.
 
 ### Some details worth knowing
 
-- **Carved blocks.** One `InstancedMesh` per elevation level, so a block standing three levels
-  high gets a correctly proportioned bevel instead of a stretched one. A small shader patch
-  paints the sides as bare earth while the top keeps its painted finish.
-- **Bridges.** A water tile's rail height is interpolated between the banks either side of it,
-  which is what makes the deck a deck. Trestles drop from it to the water.
-- **Tunnels.** Boring drops the tile's rail height to the level of the ground it opens onto and
-  records the rock's own height separately, so the mountain still stands over the line.
-- **Gradient protection.** Terrain edits re-check every rail segment that touches the tile and
-  refuse anything that would strand a line on an impossible grade. The landscape generator uses
-  the same check, so "Grow a landscape" can never break an existing railway — there is a test
-  that runs it across 25 seeds and asserts exactly that.
-- **Reflective water.** All water tiles are merged into one surface built in the local XY plane
-  so a single rotation lays it flat, which is what the reflector needs.
+- **Rivers are routed on a blurred copy of the land.** A strict downhill walk stalls in the
+  first local minimum and leaves a pit on a hillside with the sea showing through it. Routing on
+  a blurred field removes almost all of those, and a standing pull towards the coast covers the
+  rest. The cut is capped, because a bed forced to keep falling will bore a slot canyon through
+  any ridge in its way.
+- **The land runs out before the map does.** Without a falloff at every border the mesh simply
+  stops and the region reads as a slab standing in the sea.
+- **Colour bands are keyed to the region's own height range**, not to fixed metres, so retuning
+  the relief moves the tree line with it instead of turning everything into moorland.
+- **The lighting is deliberately dim.** ACES tone mapping desaturates anything much above 1.0;
+  at the intensities that looked right without it, the entire landscape washed out to cream.
+- **A hidden tab never gets a frame.** React Three Fiber waits on a rAF-driven measurement of
+  its container before it mounts the scene at all, so a map opened in a background tab is not
+  paused — it is never built. `world/frames.ts` handles that case.
 
 ---
 
 ## Accessibility
 
-- A **keyboard survey grid** sits under the canvas in the document at all times: the same
-  survey as a grid of labelled buttons, with arrow-key navigation and the same rules, scoring
-  and saved progress. It is not a fallback — it is always there.
 - A **genuine WebGL fallback** replaces the canvas only when the browser cannot draw it, or if
-  the context is lost. It never covers a working canvas, and a working canvas is never replaced
-  by it.
-- Dialogs are real modals with focus traps, Escape handling and restored focus. The Survey
-  Office is a menu with proper `menuitemradio` / `menuitemcheckbox` semantics.
-- A polite live region announces mode changes, hints, deliveries and milestones.
+  the context is lost. It never covers a working canvas.
+- An error boundary around the scene reports what failed instead of silently unmounting, which
+  otherwise looks exactly like a working renderer drawing nothing.
+- Dialogs are real modals with focus traps, Escape handling and restored focus. The menu uses
+  proper `menuitemradio` / `menuitemcheckbox` semantics.
+- A polite live region announces what the country is doing.
 - Day and night are both designed rather than one being an inversion of the other.
 - `prefers-reduced-motion` is respected.
 
@@ -156,17 +155,17 @@ mount what it returns.
 npm run test:run
 ```
 
-182 tests across seven files:
-
 | File | Covers |
 | --- | --- |
-| `game/campaign.test.ts` | Every level solvable, par honest, bridge budgets binding, terrain well formed |
-| `game/economy.test.ts` | Growth rules, networks, service quality, site quality, fares, milestones, building placement |
-| `game/track.test.ts` | Adjacency, gradient, rock, water, loops, lifting track |
-| `game/terrain.test.ts` | Elevation tools, grade protection, tunnels, landscape growth over 25 seeds |
-| `game/save.test.ts` | Malformed JSON, wrong shapes, quota failures, serialisation round trips |
-| `three/geometry.test.ts` | Rail paths, bridge deck interpolation, smoothing, mesh buffers, train pitch, shuttling, loop circulation |
-| `ui/app.test.tsx` | Rendering, the whole build→connect→deliver loop, dialogs, menus, keyboard grid, WebGL fallback, free-build economy |
+| `world/heightfield.test.ts` | Generation, sampling, slope, siting, the drawable surface |
+| `world/rail.test.ts` | The gradient solver, laying, junctions, components, runnable paths |
+| `world/towns.test.ts` | Service rules, networks, growth, decline, fares, upkeep, unlocks |
+| `test/probe.test.ts` | That the land has no pits or slot canyons and the rivers reach the sea |
+
+The terrain tests are worth a word. Tests about the *shape of the rail graph* run on gentle
+country, on purpose: junctions pin both ends of a line, so on real hills a thousand-metre run
+between two fixed points is often legitimately too steep, and coupling graph tests to terrain
+tuning would make every hill adjustment break something unrelated.
 
 ---
 
