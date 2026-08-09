@@ -1,0 +1,383 @@
+/* The Binding — chrome for a dark room. */
+
+:root {
+  --serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+  --ink: #07060a;
+  --chalk: #ded5bf;
+  --chalk-dim: #9b9280;
+  --chalk-faint: #6a6355;
+  --ember: #ffa04a;
+  --ember-deep: #c05a2a;
+  --violet: #b78ff5;
+  --danger: #e8654a;
+  --hair: rgba(222, 213, 191, 0.14);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: var(--ink);
+}
+
+body {
+  font-family: var(--serif);
+  color: var(--chalk);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+#scene {
+  position: fixed;
+  inset: 0;
+  display: block;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
+  padding: clamp(0.9rem, 2.4vw, 2rem);
+}
+
+.overlay > * {
+  pointer-events: auto;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------- readouts */
+
+.head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 2rem;
+}
+
+.who-name {
+  margin: 0;
+  font-size: clamp(1rem, 2.4vw, 1.5rem);
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--chalk);
+}
+
+.who-epithet {
+  margin: 0.25rem 0 0;
+  font-size: 0.82rem;
+  font-style: italic;
+  letter-spacing: 0.04em;
+  color: var(--chalk-faint);
+}
+
+.gauges {
+  display: flex;
+  gap: 1.6rem;
+}
+
+.gauge {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: clamp(9rem, 18vw, 14rem);
+}
+
+.gauge-label {
+  font-size: 0.68rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--chalk-faint);
+}
+
+.gauge-value {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  color: var(--chalk-dim);
+  font-variant-numeric: tabular-nums;
+  min-width: 2.6rem;
+  text-align: right;
+}
+
+.track {
+  position: relative;
+  height: 3px;
+  background: rgba(222, 213, 191, 0.12);
+  overflow: hidden;
+}
+
+.fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  display: block;
+  background: var(--chalk);
+  transition: width 120ms linear;
+}
+
+.fill.low {
+  background: var(--danger);
+}
+
+.fill.time {
+  background: linear-gradient(90deg, var(--ember-deep), var(--ember));
+}
+
+/* ---------------------------------------------------------------- tools */
+
+.dock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.tools {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.tool {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: clamp(8rem, 17vw, 12rem);
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+  font-family: inherit;
+  color: var(--chalk-dim);
+  background: rgba(12, 10, 14, 0.72);
+  border: 1px solid var(--hair);
+  cursor: pointer;
+  transition: color 120ms, border-color 120ms, background 120ms;
+}
+
+.tool:hover:not(:disabled) {
+  color: var(--chalk);
+  border-color: rgba(222, 213, 191, 0.32);
+}
+
+.tool.on {
+  color: var(--ink);
+  background: var(--chalk);
+  border-color: var(--chalk);
+}
+
+.tool.on .tool-hint,
+.tool.on .tool-cost,
+.tool.on kbd {
+  color: rgba(7, 6, 10, 0.66);
+  border-color: rgba(7, 6, 10, 0.3);
+}
+
+.tool:disabled {
+  opacity: 0.36;
+  cursor: not-allowed;
+}
+
+.tool-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.tool-name {
+  font-size: 0.92rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+kbd {
+  font-family: inherit;
+  font-size: 0.62rem;
+  line-height: 1;
+  padding: 0.16rem 0.3rem;
+  color: var(--chalk-faint);
+  border: 1px solid var(--hair);
+}
+
+.tool-hint {
+  font-size: 0.7rem;
+  font-style: italic;
+  color: var(--chalk-faint);
+  line-height: 1.35;
+}
+
+.tool-cost {
+  font-size: 0.66rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--chalk-faint);
+}
+
+.status {
+  margin: 0;
+  font-size: 0.78rem;
+  font-style: italic;
+  letter-spacing: 0.05em;
+  color: var(--chalk-faint);
+  text-align: center;
+  min-height: 1.2em;
+}
+
+/* ---------------------------------------------------------------- cards */
+
+.primary,
+.ghost {
+  font-family: inherit;
+  font-size: 0.8rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 0.7rem 1.5rem;
+  cursor: pointer;
+  transition: background 140ms, color 140ms, border-color 140ms;
+}
+
+.primary {
+  color: var(--ink);
+  background: var(--chalk);
+  border: 1px solid var(--chalk);
+}
+
+.primary:hover {
+  background: #fff8e8;
+}
+
+.ghost {
+  color: var(--chalk-dim);
+  background: transparent;
+  border: 1px solid var(--hair);
+}
+
+.ghost:hover {
+  color: var(--chalk);
+  border-color: rgba(222, 213, 191, 0.34);
+}
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  display: none;
+  place-items: center;
+  padding: 1.5rem;
+  background: radial-gradient(ellipse at centre, rgba(7, 6, 10, 0.72), rgba(7, 6, 10, 0.95));
+  backdrop-filter: blur(2px);
+}
+
+.scrim.open {
+  display: grid;
+}
+
+.card {
+  max-width: 34rem;
+  padding: clamp(1.6rem, 4vw, 2.6rem);
+  background: rgba(11, 9, 13, 0.94);
+  border: 1px solid var(--hair);
+  box-shadow: 0 40px 90px -40px #000;
+  animation: rise 320ms ease-out;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+.card-kicker {
+  margin: 0 0 0.9rem;
+  font-size: 0.66rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--ember);
+}
+
+.card-title {
+  margin: 0 0 0.9rem;
+  font-size: clamp(1.4rem, 4vw, 2.1rem);
+  font-weight: 400;
+  line-height: 1.15;
+  color: var(--chalk);
+}
+
+.card-body {
+  margin: 0;
+  font-size: 0.98rem;
+  line-height: 1.65;
+  color: var(--chalk-dim);
+}
+
+.card-tell {
+  margin: 1.1rem 0 0;
+  padding-left: 0.9rem;
+  border-left: 2px solid var(--ember-deep);
+  font-size: 0.86rem;
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--chalk);
+}
+
+.card-actions {
+  display: flex;
+  gap: 0.7rem;
+  margin-top: 1.8rem;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 640px) {
+  .head {
+    flex-direction: column;
+    gap: 0.8rem;
+  }
+
+  .gauges {
+    width: 100%;
+    gap: 0.9rem;
+  }
+
+  .gauge {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .tool {
+    min-width: 0;
+    flex: 1 1 8rem;
+  }
+
+  .tool-hint {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    animation: none;
+  }
+
+  .fill {
+    transition: none;
+  }
+}

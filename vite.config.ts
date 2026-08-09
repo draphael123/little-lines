@@ -11,6 +11,14 @@ export default defineConfig({
   build: {
     target: 'es2022',
     chunkSizeWarningLimit: 1400,
+    // Two games, two entry points. The Binding shares nothing with Little
+    // Lines but the toolchain, so it gets its own HTML rather than a route.
+    rollupOptions: {
+      input: {
+        main: 'index.html',
+        binding: 'binding.html',
+      },
+    },
   },
   test: {
     globals: true,
