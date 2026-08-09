@@ -43,12 +43,27 @@ export function keepFramesComing() {
   // split, so how long it takes to mount is not something to guess at. An
   // unmeasured canvas keeps its 300x150 default, which is what this watches for.
   let attempts = 0
-  const nudge = window.setInterval(() => {
+  const measured = () => {
     const canvas = document.querySelector('canvas')
-    if ((canvas && canvas.width > 300) || attempts++ > 60) {
+    // an unmeasured canvas keeps the 300x150 HTML default
+    return !!canvas && canvas.width > 300
+  }
+  const nudge = window.setInterval(() => {
+    if (measured() || attempts++ > 60) {
       window.clearInterval(nudge)
       return
     }
     window.dispatchEvent(new Event('resize'))
   }, 200)
+
+  // The reliable moment is when the tab is finally looked at: ResizeObserver
+  // and rAF both come back, so one nudge here settles anything the polling
+  // above did not. Timer throttling in a background tab makes the polling
+  // best-effort, but this path is not throttled.
+  document.addEventListener('visibilitychange', function shown() {
+    if (document.visibilityState !== 'visible') return
+    document.removeEventListener('visibilitychange', shown)
+    window.clearInterval(nudge)
+    window.dispatchEvent(new Event('resize'))
+  })
 }

@@ -131,7 +131,10 @@ what they return.
   at the intensities that looked right without it, the entire landscape washed out to cream.
 - **A hidden tab never gets a frame.** React Three Fiber waits on a rAF-driven measurement of
   its container before it mounts the scene at all, so a map opened in a background tab is not
-  paused — it is never built. `world/frames.ts` handles that case.
+  paused — it is never built. `world/frames.ts` shims rAF onto a timer and nudges a measurement,
+  reliably on the visibilitychange when the tab is first looked at, and best-effort by polling
+  before then (background timer throttling makes the earlier path unreliable in a production
+  build).
 
 ---
 
