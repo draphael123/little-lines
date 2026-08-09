@@ -1,0 +1,143 @@
+import { useMemo } from 'react'
+import { surveyCountry } from '../game/economy'
+import { keyOf } from '../game/grid'
+import { tilesInclude } from '../game/track'
+import type { Coord, RailLine } from '../game/types'
+import { useGame, worldForLevel } from '../store/useGame'
+import { CameraRig } from './CameraRig'
+import { hoverToneFor, resolveLevel } from './hover'
+import { Markers } from './Markers'
+import { moodFor } from './palette'
+import { Scenery } from './Scenery'
+import { Settlements } from './Settlements'
+import { Table } from './Table'
+import { Terrain } from './Terrain'
+import { DeliveryTrain, FreeTrains } from './Trains'
+import { TrackLines } from './TrackLines'
+import { Water } from './Water'
+
+/** Everything inside the WebGL canvas. */
+export function SceneRoot() {
+  const mode = useGame((s) => s.mode)
+  const night = useGame((s) => s.night)
+  const hovered = useGame((s) => s.hovered)
+  const hint = useGame((s) => s.hint)
+  const camera = useGame((s) => s.camera)
+  const cameraNonce = useGame((s) => s.cameraNonce)
+  const route = useGame((s) => s.route)
+  const puzzleRunning = useGame((s) => s.puzzleRunning)
+  const levelId = useGame((s) => s.levelId)
+  const free = useGame((s) => s.free)
+
+  const level = useMemo(() => resolveLevel(levelId), [levelId])
+  const world = mode === 'puzzle' ? worldForLevel(level) : free.world
+  const mood = moodFor(night)
+
+  const lines = useMemo<RailLine[]>(
+    () => (mode === 'puzzle' ? (route.length >= 1 ? [{ id: 'campaign', tiles: route }] : []) : free.lines),
+    [mode, route, free.lines],
+  )
+
+  const tone = useMemo(() => hoverToneFor(useGame.getState(), world, hovered), [world, hovered])
+
+  const stopsServed = useMemo(
+    () => level.stops.filter((s) => tilesInclude(route, s)).map(keyOf),
+    [level.stops, route],
+  )
+
+  const country = useMemo(
+    () =>
+      mode === 'free'
+        ? surveyCountry(free.world, free.lines, free.settlements, free.trains)
+        : [],
+    [mode, free.world, free.lines, free.settlements, free.trains],
+  )
+
+  const handlePick = (c: Coord) => {
+    const state = useGame.getState()
+    if (state.mode === 'puzzle') state.tapPuzzleTile(c)
+    else state.tapFreeTile(c)
+  }
+  const handleHover = (c: Coord | null) => useGame.getState().setHovered(c)
+
+  return (
+    <>
+      <color attach="background" args={[mood.background]} />
+      <fogExp2 attach="fog" args={[mood.fog, mood.fogDensity]} />
+
+      <hemisphereLight args={[mood.hemi.sky, mood.hemi.ground, mood.hemi.intensity]} />
+      <directionalLight
+        position={mood.sun.position}
+        intensity={mood.sun.intensity}
+        color={mood.sun.colour}
+        castShadow
+        shadow-mapSize={[2048, 2048]}
+        shadow-bias={-0.0005}
+        shadow-normalBias={0.02}
+        shadow-camera-left={-18}
+        shadow-camera-right={18}
+        shadow-camera-top={18}
+        shadow-camera-bottom={-18}
+        shadow-camera-near={0.5}
+        shadow-camera-far={60}
+      />
+      <directionalLight position={[-6, 5, -7]} intensity={mood.fill.intensity} color={mood.fill.colour} />
+
+      <Table world={world} />
+      <Terrain world={world} onPick={handlePick} onHover={handleHover} />
+      <Water world={world} mood={mood} />
+      <TrackLines world={world} lines={lines} />
+      <Scenery world={world} night={night} />
+
+      {mode === 'puzzle' ? (
+        <>
+          <Markers
+            world={world}
+            depot={level.depot}
+            destination={level.destination}
+            stops={level.stops}
+            stopsServed={stopsServed}
+            hovered={hovered}
+            hoverTone={tone}
+            hint={hint}
+          />
+          <DeliveryTrain
+            world={world}
+            tiles={route}
+            running={puzzleRunning}
+            night={night}
+            onArrive={() => useGame.getState().completeDelivery()}
+          />
+        </>
+      ) : (
+        <>
+          <Markers
+            world={world}
+            hovered={hovered}
+            hoverTone={tone}
+            settlements={country.map((r) => ({
+              at: { x: r.settlement.x, z: r.settlement.z },
+              growing: r.state === 'growing' || r.state === 'full',
+            }))}
+          />
+          <Settlements
+            world={world}
+            lines={free.lines}
+            settlements={free.settlements}
+            night={night}
+          />
+          <FreeTrains
+            world={world}
+            lines={free.lines}
+            count={free.trains}
+            speed={free.speed}
+            running={free.running}
+            night={night}
+          />
+        </>
+      )}
+
+      <CameraRig world={world} preset={camera} nonce={cameraNonce} />
+    </>
+  )
+}
