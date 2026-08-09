@@ -33,6 +33,10 @@ export interface RailEdge {
   length: number
   /** Metres of the run that stand clear of the ground and need a viaduct. */
   bridged: number
+  /** How far the player asked this line to sit above the ground, in metres. */
+  lift: number
+  /** The plan of the line, so it can be re-profiled at a new height. */
+  plan: Array<{ x: number; z: number }>
 }
 
 export interface RailNetwork {
@@ -174,7 +178,17 @@ export interface LayOptions {
   /** Existing node to start from, if the drag began on the network. */
   fromNode?: string
   toNode?: string
+  /**
+   * Metres to carry the line above the ground, or below it if negative. This
+   * is how you build an embankment over a valley or a cutting through a rise
+   * rather than accepting whatever the ground does.
+   */
+  lift?: number
 }
+
+/** How far one press of the raise or lower control moves a line. */
+export const LIFT_STEP = 4
+export const LIFT_LIMIT = 60
 
 let seq = 0
 const nextId = (prefix: string) => `${prefix}${(seq++).toString(36)}${Date.now().toString(36).slice(-4)}`
@@ -236,7 +250,11 @@ export function layEdge(
   // Only a junction pins the height of an end. A line finishing in open
   // country settles wherever the gradient wants it, in a cutting or on an
   // embankment.
-  const heights = profile(ground, steps, [startNode?.y ?? null, endNode?.y ?? null])
+  const lift = Math.max(-LIFT_LIMIT, Math.min(LIFT_LIMIT, options.lift ?? 0))
+  // An embankment carries the whole line, ends included. Where an end is a
+  // junction the pin wins and the gradient clamp builds the ramp up to it.
+  const wanted = ground.map((g) => g + lift)
+  const heights = profile(wanted, steps, [startNode?.y ?? null, endNode?.y ?? null])
   if (!heights) {
     const climb = Math.round(Math.abs((endNode?.y ?? 0) - (startNode?.y ?? 0)))
     return {
@@ -272,8 +290,87 @@ export function layEdge(
   return {
     ok: true,
     created,
-    edge: { id: nextId('e'), a: aId, b: bId, points, length, bridged },
+    edge: {
+      id: nextId('e'),
+      a: aId,
+      b: bId,
+      points,
+      length,
+      bridged,
+      lift,
+      plan: flat.map((p) => ({ x: p.x, z: p.z })),
+    },
   }
+}
+
+/**
+ * Raise or lower a line that is already built, re-profiling it in place. The
+ * junctions at either end stay where they are, so the rest of the network is
+ * undisturbed.
+ */
+export function adjustEdge(
+  field: Heightfield,
+  network: RailNetwork,
+  edgeId: string,
+  delta: number,
+): { network: RailNetwork; ok: boolean; reason?: string } {
+  const edge = network.edges.find((e) => e.id === edgeId)
+  if (!edge) return { network, ok: false, reason: 'No such length of line.' }
+
+  const lift = Math.max(-LIFT_LIMIT, Math.min(LIFT_LIMIT, edge.lift + delta))
+  const ground = edge.plan.map((p) => heightAt(field, p.x, p.z))
+  const steps: number[] = []
+  for (let i = 1; i < edge.plan.length; i++) {
+    steps.push(dist2(edge.plan[i - 1].x, edge.plan[i - 1].z, edge.plan[i].x, edge.plan[i].z))
+  }
+  const wanted = ground.map((g) => g + lift)
+
+  const degree = (nodeId: string) => network.edges.filter((e) => e.a === nodeId || e.b === nodeId).length
+  const pinA = degree(edge.a) > 1 ? network.nodes[edge.a].y : null
+  const pinB = degree(edge.b) > 1 ? network.nodes[edge.b].y : null
+  const heights = profile(wanted, steps, [pinA, pinB])
+  if (!heights) return { network, ok: false, reason: 'No gradient can join those junctions.' }
+
+  let bridged = 0
+  const points: Vec3[] = edge.plan.map((p, i) => {
+    const clearance = heights[i] - ground[i]
+    if (clearance > DECK_CLEARANCE || isWater(field, p.x, p.z)) bridged += steps[Math.min(i, steps.length - 1)] ?? 0
+    return [p.x, heights[i], p.z]
+  })
+  let length = 0
+  for (let i = 1; i < points.length; i++) {
+    length += Math.hypot(
+      points[i][0] - points[i - 1][0],
+      points[i][1] - points[i - 1][1],
+      points[i][2] - points[i - 1][2],
+    )
+  }
+
+  const nodes = { ...network.nodes }
+  if (pinA === null) nodes[edge.a] = { ...nodes[edge.a], y: heights[0] }
+  if (pinB === null) nodes[edge.b] = { ...nodes[edge.b], y: heights[heights.length - 1] }
+
+  return {
+    ok: true,
+    network: {
+      nodes,
+      edges: network.edges.map((e) =>
+        e.id === edgeId ? { ...e, points, length, bridged, lift } : e,
+      ),
+    },
+  }
+}
+
+/** The line nearest a point, for selecting one to raise or lift. */
+export function nearestEdge(network: RailNetwork, x: number, z: number, within = 90) {
+  let best: { edge: RailEdge; distance: number } | null = null
+  for (const edge of network.edges) {
+    for (const p of edge.points) {
+      const d = dist2(p[0], p[2], x, z)
+      if (d < within && (!best || d < best.distance)) best = { edge, distance: d }
+    }
+  }
+  return best
 }
 
 export function addEdge(network: RailNetwork, result: LayResult): RailNetwork {
