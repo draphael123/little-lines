@@ -11,17 +11,26 @@ export interface Surface {
   positions: Float32Array
   normals: Float32Array
   colors: Float32Array
+  /** World x/z in metres, for a detail texture that tiles across the region. */
+  uvs: Float32Array
   indices: Uint32Array
   triangles: number
 }
 
+/**
+ * Metres covered by one repeat of the ground detail texture. Large enough that
+ * the repeat is not a visible grid from the air, small enough that the grain
+ * still resolves at street level.
+ */
+export const DETAIL_TILE = 44
+
 type RGB = [number, number, number]
 
-const MEADOW: RGB = [0.35, 0.5, 0.24]
-const PASTURE: RGB = [0.44, 0.53, 0.26]
-const UPLAND: RGB = [0.36, 0.42, 0.24]
-const MOOR: RGB = [0.4, 0.37, 0.25]
-const ROCK: RGB = [0.4, 0.39, 0.36]
+const MEADOW: RGB = [0.43, 0.58, 0.29]
+const PASTURE: RGB = [0.54, 0.62, 0.33]
+const UPLAND: RGB = [0.45, 0.5, 0.3]
+const MOOR: RGB = [0.5, 0.46, 0.32]
+const ROCK: RGB = [0.48, 0.46, 0.43]
 const SAND: RGB = [0.72, 0.66, 0.48]
 const BED: RGB = [0.24, 0.28, 0.24]
 
@@ -73,6 +82,7 @@ export function buildSurface(field: Heightfield): Surface {
   const positions = new Float32Array(count * 3)
   const normals = new Float32Array(count * 3)
   const colors = new Float32Array(count * 3)
+  const uvs = new Float32Array(count * 2)
   const indices = new Uint32Array((n - 1) * (n - 1) * 6)
 
   const h = (i: number, j: number) =>
@@ -93,6 +103,8 @@ export function buildSurface(field: Heightfield): Surface {
       positions[k * 3] = gridToWorld(i)
       positions[k * 3 + 1] = height
       positions[k * 3 + 2] = gridToWorld(j)
+      uvs[k * 2] = gridToWorld(i) / DETAIL_TILE
+      uvs[k * 2 + 1] = gridToWorld(j) / DETAIL_TILE
 
       // central-difference normal, which is exact enough for a smooth field
       const dx = (h(i + 1, j) - h(i - 1, j)) / (2 * SPACING)
@@ -107,11 +119,9 @@ export function buildSurface(field: Heightfield): Surface {
       // region, and field-sized patches so a hillside is not one flat green.
       const broad = fbm((i / n) * 6, (j / n) * 6, field.seed + 4201, 3) * 2 - 1
       const patch = fbm((i / n) * 17, (j / n) * 17, field.seed + 8803, 2) * 2 - 1
-      // At 8 m between samples a high-frequency term is visible as ground
-      // texture from a train window, and averages away from the air. Without
-      // it the whole region is a smooth billiard cloth at close range.
-      const grain = fbm((i / n) * 150, (j / n) * 150, field.seed + 2237, 2) * 2 - 1
-      const variation = broad * 0.7 + patch * 0.45 + grain * 0.35
+      // Close-range texture is the detail map's job — at 8 m between samples a
+      // vertex term fine enough to see is also fine enough to alias.
+      const variation = broad * 0.7 + patch * 0.5
       const [r, g, b] = groundColour(
         height,
         Math.hypot(dx, dz),
@@ -141,7 +151,7 @@ export function buildSurface(field: Heightfield): Surface {
     }
   }
 
-  return { positions, normals, colors, indices, triangles: indices.length / 3 }
+  return { positions, normals, colors, uvs, indices, triangles: indices.length / 3 }
 }
 
 export const surfaceExtent = () => (RESOLUTION - 1) * SPACING

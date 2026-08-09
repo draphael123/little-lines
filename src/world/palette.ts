@@ -27,10 +27,10 @@ export const DAY: SceneMood = {
   // 1.0, and at 2.9 the whole landscape washed out to cream whatever colour
   // the ground actually was.
   sun: { colour: '#fff3dd', intensity: 1.15, position: [8, 12, 5] },
-  fill: { colour: '#9db9d4', intensity: 0.3 },
+  fill: { colour: '#9db9d4', intensity: 0.42 },
   // Skylight has to carry the shaded side of every wall on its own. Too low
   // and north-facing elevations render as black cut-outs.
-  hemi: { sky: '#b4d2e6', ground: '#6a6050', intensity: 0.72 },
+  hemi: { sky: '#bcd6e8', ground: '#7d7461', intensity: 0.86 },
   sea: '#2f7093',
   seaRoughness: 0.16,
   windows: '#000000',

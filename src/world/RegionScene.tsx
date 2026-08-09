@@ -6,8 +6,11 @@ import {
   BufferAttribute,
   BufferGeometry,
   Color,
+  Object3D,
   ShaderMaterial,
+  Vector2,
   Vector3,
+  type DirectionalLight,
   type InstancedMesh,
   type PerspectiveCamera,
 } from 'three'
@@ -18,12 +21,16 @@ import { RailPreview, RailView } from './RailView'
 import { layEdge, nearestEdge, type LayResult, type RailNetwork, type Vec3 } from './rail'
 import { keepClear, scatterTrees } from './scatter'
 import { StructureView } from './StructureView'
+import { groundDetail } from './detail'
 import { buildSurface } from './terrainSurface'
 import { planCountry } from './townLayout'
 import type { Settlement } from './towns'
 import { Buildings, Roads, Woods } from './TownView'
 import { Trains, useTrains } from './TrainView'
 import type { Pose, SpeedName } from './trainRun'
+
+/** Kept out of the render so the material is not handed a new Vector2 a frame. */
+const NORMAL_SCALE = new Vector2(0.75, 0.75)
 
 export type RegionTool = 'look' | 'rail' | 'raise' | 'lower' | 'build' | 'demolish'
 export type ViewMode = 'free' | 'follow' | 'cab'
@@ -41,12 +48,14 @@ function RegionTerrain({
   onDown?: (point: { x: number; z: number }) => void
   onUp?: (point: { x: number; z: number }) => void
 }) {
+  const detail = useMemo(() => groundDetail(), [])
   const geometry = useMemo(() => {
     const surface = buildSurface(field)
     const g = new BufferGeometry()
     g.setAttribute('position', new BufferAttribute(surface.positions, 3))
     g.setAttribute('normal', new BufferAttribute(surface.normals, 3))
     g.setAttribute('color', new BufferAttribute(surface.colors, 3))
+    g.setAttribute('uv', new BufferAttribute(surface.uvs, 2))
     g.setIndex(new BufferAttribute(surface.indices, 1))
     g.computeBoundingSphere()
     return g
@@ -67,7 +76,14 @@ function RegionTerrain({
       onPointerDown={(e) => e.button === 0 && onDown?.({ x: e.point.x, z: e.point.z })}
       onPointerUp={(e) => e.button === 0 && onUp?.({ x: e.point.x, z: e.point.z })}
     >
-      <meshStandardMaterial vertexColors roughness={0.97} metalness={0} />
+      <meshStandardMaterial
+        vertexColors
+        map={detail.map}
+        normalMap={detail.normal}
+        normalScale={NORMAL_SCALE}
+        roughness={0.97}
+        metalness={0}
+      />
     </mesh>
   )
 }
@@ -111,7 +127,9 @@ function Sky({ mood }: { mood: SceneMood }) {
 function Sea({ mood, level }: { mood: SceneMood; level: number }) {
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, level, 0]} receiveShadow raycast={() => null}>
-      <planeGeometry args={[REGION * 5, REGION * 5]} />
+      {/* Must stay inside the sky dome (radius REGION * 2.4) or its far edge
+          cuts a hard straight line across the horizon. */}
+      <planeGeometry args={[REGION * 4, REGION * 4]} />
       <MeshReflectorMaterial
         color={mood.sea}
         resolution={512}
@@ -150,6 +168,9 @@ interface CameraProps {
   freeDrag: boolean
   view: ViewMode
   ridePose: React.RefObject<Pose | null>
+  /** Shared with the sun, so the shadow frustum can follow the view. */
+  focus: React.RefObject<Vector3>
+  distance: React.RefObject<number>
 }
 
 /**
@@ -157,11 +178,9 @@ interface CameraProps {
  * behind, or ride in the cab. The free camera flattens its pitch as it comes
  * down, so street level looks along the ground rather than down at it.
  */
-function RegionCamera({ field, freeDrag, view, ridePose }: CameraProps) {
+function RegionCamera({ field, freeDrag, view, ridePose, focus, distance }: CameraProps) {
   const camera = useThree((s) => s.camera)
   const gl = useThree((s) => s.gl)
-  const focus = useRef(new Vector3(0, 0, 0))
-  const distance = useRef(1500)
   const yaw = useRef(0.6)
   const held = useRef(new Set<string>())
   const dragging = useRef<{ x: number; y: number; button: number } | null>(null)
@@ -210,7 +229,7 @@ function RegionCamera({ field, freeDrag, view, ridePose }: CameraProps) {
       el.removeEventListener('wheel', wheel)
       el.removeEventListener('contextmenu', context)
     }
-  }, [gl, freeDrag])
+  }, [gl, freeDrag, focus, distance])
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -266,8 +285,13 @@ function RegionCamera({ field, freeDrag, view, ridePose }: CameraProps) {
     focus.current.z = Math.max(-edge, Math.min(edge, focus.current.z))
     focus.current.y = heightAt(field, focus.current.x, focus.current.z)
 
+    // Looking down more as you pull back, and flattening towards eye level as
+    // you come in, so a close view looks along the country rather than onto it.
+    // Kept shallow enough that the horizon stays in frame at ordinary
+    // distances. Looking straight down flattens the hills into a green map and
+    // throws away the silhouette, which is most of what makes the land read.
     const t = Math.max(0, Math.min(1, (distance.current - 60) / 3340))
-    const pitch = 0.16 + t * 0.78
+    const pitch = 0.06 + t * 0.44
     const d = distance.current
     camera.position.lerp(
       new Vector3(
@@ -281,6 +305,70 @@ function RegionCamera({ field, freeDrag, view, ridePose }: CameraProps) {
   })
 
   return null
+}
+
+/**
+ * The sun, with a shadow frustum that follows the view.
+ *
+ * A single map stretched over the whole region is 1.7 m per texel, which is
+ * far too coarse for ground this smooth: instead of shadows you get great
+ * blue-grey smudges of acne with the map's own texels visible in their edges.
+ * Covering a box around whatever you are actually looking at, sized from how
+ * far out the camera is, keeps it under half a metre per texel when you are
+ * close and degrades gracefully as you pull back.
+ */
+function Sun({
+  mood,
+  focus,
+  distance,
+}: {
+  mood: SceneMood
+  focus: React.RefObject<Vector3>
+  distance: React.RefObject<number>
+}) {
+  const light = useRef<DirectionalLight>(null)
+  const target = useRef<Object3D>(new Object3D())
+
+  useFrame(() => {
+    const lamp = light.current
+    if (!lamp) return
+    const { x, y, z } = focus.current
+
+    // Span the visible ground, with a floor so a close-up still casts, and a
+    // ceiling so a wide shot does not go back to mush.
+    const span = Math.max(340, Math.min(1500, distance.current * 0.85))
+    const cam = lamp.shadow.camera
+    if (cam.right !== span) {
+      cam.left = -span
+      cam.right = span
+      cam.top = span
+      cam.bottom = -span
+      cam.updateProjectionMatrix()
+    }
+
+    target.current.position.set(x, y, z)
+    target.current.updateMatrixWorld()
+    lamp.position.set(x + 760, y + 2050, z + 540)
+    lamp.updateMatrixWorld()
+  })
+
+  return (
+    <>
+      <primitive object={target.current} />
+      <directionalLight
+        ref={light}
+        target={target.current}
+        intensity={mood.sun.intensity}
+        color={mood.sun.colour}
+        castShadow
+        shadow-mapSize={[4096, 4096]}
+        shadow-bias={-0.0008}
+        shadow-normalBias={0.9}
+        shadow-camera-near={200}
+        shadow-camera-far={4200}
+      />
+    </>
+  )
 }
 
 /* ------------------------------------------------------------------ scene */
@@ -317,6 +405,9 @@ export function RegionScene(props: RegionSceneProps) {
   const [preview, setPreview] = useState<{ points: Vec3[]; ok: boolean } | null>(null)
   const anchor = useRef<{ x: number; z: number } | null>(null)
   const ridePose = useRef<Pose | null>(null)
+  // shared by the camera and the sun, so shadows follow what you are looking at
+  const focus = useRef(new Vector3(0, 0, 0))
+  const distance = useRef(2000)
 
   const trainStates = useTrains(network, roster, speed)
 
@@ -338,7 +429,7 @@ export function RegionScene(props: RegionSceneProps) {
       260,
     )
     return scatterTrees(field, {
-      spacing: 30,
+      spacing: 21,
       taken: (x, z) => nearRail(x, z) || nearTown(x, z),
     })
   }, [field, settlements, nearRail])
@@ -397,21 +488,7 @@ export function RegionScene(props: RegionSceneProps) {
       <fogExp2 attach="fog" args={[mood.fog, 0.00015]} />
 
       <hemisphereLight args={[mood.hemi.sky, mood.hemi.ground, mood.hemi.intensity]} />
-      <directionalLight
-        position={[1400, 2200, 900]}
-        intensity={mood.sun.intensity}
-        color={mood.sun.colour}
-        castShadow
-        shadow-mapSize={[2048, 2048]}
-        shadow-bias={-0.0006}
-        shadow-normalBias={2}
-        shadow-camera-left={-1700}
-        shadow-camera-right={1700}
-        shadow-camera-top={1700}
-        shadow-camera-bottom={-1700}
-        shadow-camera-near={100}
-        shadow-camera-far={6000}
-      />
+      <Sun mood={mood} focus={focus} distance={distance} />
       <directionalLight
         position={[-900, 700, -1100]}
         intensity={mood.fill.intensity}
@@ -439,7 +516,14 @@ export function RegionScene(props: RegionSceneProps) {
         }}
       />
 
-      <RegionCamera field={field} freeDrag={tool === 'look'} view={view} ridePose={ridePose} />
+      <RegionCamera
+        field={field}
+        freeDrag={tool === 'look'}
+        view={view}
+        ridePose={ridePose}
+        focus={focus}
+        distance={distance}
+      />
       <Inspector />
     </>
   )

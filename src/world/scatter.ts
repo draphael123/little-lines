@@ -38,6 +38,13 @@ export function scatterTrees(field: Heightfield, options: ScatterOptions = {}): 
   const taken = options.taken ?? (() => false)
   const out: Tree[] = []
 
+  // The tree line has to follow the region's own range. Fixed at 110 m it
+  // stripped the woods off a map whose valley floors are already at 200 m.
+  let ceiling = field.seaLevel
+  for (const h of field.heights) if (h > ceiling) ceiling = h
+  const span = Math.max(1, ceiling - field.seaLevel)
+  const treeline = field.seaLevel + span * 0.62
+
   for (let z = -REACH; z <= REACH; z += spacing) {
     for (let x = -REACH; x <= REACH; x += spacing) {
       // jitter off the lattice so the wood is not a plantation
@@ -55,7 +62,7 @@ export function scatterTrees(field: Heightfield, options: ScatterOptions = {}): 
       const wood = fbm(jx * 0.0016, jz * 0.0016, 41, 4)
       let chance = (wood - 0.42) * 2.6
       // thin out on the tops and along the shore
-      chance -= Math.max(0, (height - 110) / 150)
+      chance -= Math.max(0, (height - treeline) / (span * 0.3))
       chance -= Math.max(0, (12 - (height - field.seaLevel)) / 26)
       chance -= Math.max(0, (slope - 0.34) * 1.4)
       chance *= density
@@ -69,7 +76,7 @@ export function scatterTrees(field: Heightfield, options: ScatterOptions = {}): 
         scale: 0.72 + roll * 0.85,
         spin: roll * Math.PI * 2,
         // conifers take the higher ground, broadleaves the valleys
-        broad: height < 70 && roll > 0.35 ? 1 : 0,
+        broad: height < field.seaLevel + span * 0.35 && roll > 0.35 ? 1 : 0,
       })
     }
   }
