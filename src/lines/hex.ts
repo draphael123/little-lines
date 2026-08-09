@@ -1,9 +1,10 @@
 /**
- * The board is a hexagon of hexagons, in axial coordinates.
+ * The board is a growing patch of hexes, in axial coordinates.
  *
- * Keys are packed into a single integer so the solver can use plain Maps and
- * Sets without paying for string hashing on every neighbour lookup — the water
- * is re-solved from scratch after every placement, so that walk is the hot one.
+ * Keys are packed into a single integer so the rules can use plain Maps and
+ * Sets without paying for string hashing on every neighbour lookup — groups and
+ * the rail network are re-walked from scratch after every placement, so that
+ * walk is the hot one.
  */
 
 export interface Hex {
@@ -43,6 +44,20 @@ const KEY_STEPS = DIRECTIONS.map((d) => d.q * KEY_SPAN + d.r)
 /** The six neighbours of a packed key, in `DIRECTIONS` order. */
 export function neighbourKeys(key: HexKey): HexKey[] {
   return KEY_STEPS.map((step) => key + step)
+}
+
+/** The neighbour in one direction, without building the whole ring. */
+export function neighbourKey(key: HexKey, direction: number): HexKey {
+  return key + KEY_STEPS[direction]
+}
+
+/**
+ * The edge of a neighbour that faces you. Two tiles meet along one border, and
+ * each names it by a different index; almost every rule in the game is about
+ * that pair, so it gets a name.
+ */
+export function opposite(direction: number): number {
+  return (direction + 3) % 6
 }
 
 export function distance(a: Hex, b: Hex): number {
