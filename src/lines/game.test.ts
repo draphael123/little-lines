@@ -263,6 +263,7 @@ describe('what the game says out loud', () => {
       missed: [],
       gained: 1,
       scored: 10,
+      snug: true,
       perfect: true,
       over: false,
     })
@@ -278,6 +279,7 @@ describe('what the game says out loud', () => {
       missed: [],
       gained: 0,
       scored: 0,
+      snug: false,
       perfect: false,
       over: false,
     })

@@ -1,50 +1,44 @@
 # Little Lines
 
-A cozy railway builder over four kilometres of open country. You never build a house, a shop or
-a street — you build the railway and the things that serve it, and the country arranges itself
-around what you have built.
+A cozy tile-laying game about railways. You draw hexagonal tiles from a finite stack and put them
+next to each other; where two tiles meet, the ground on both sides of the border either agrees or
+it does not. Railway is ground like any other, so a line only carries on where the tile beside it
+also shows a line.
 
-Built with React 19, TypeScript, Three.js, React Three Fiber and Drei.
+There is no timer and no way to lose. You run out of tiles, and placing well earns you more.
+
+Built with React 19, TypeScript, Three.js and React Three Fiber.
 
 ---
 
 ## The idea
 
-The region is one continuous landscape: hills, river valleys and a coast, four kilometres square
-at metre scale. Scattered across it are a dozen hamlets, sitting where people would actually
-settle — in a hollow, out of the wind, within reach of water. Left alone they stay hamlets
-forever.
+The game it is modelled on gives a tile one verb: *match my edges*. You can judge a placement with
+your eyes, at the moment you make it, against the six tiles touching it.
 
-A place grows only when:
+Little Lines keeps that — the finite stack, the soft constraints, the absence of any fail state —
+and makes the tile's second verb **carry a railway**. Rail is not a special case bolted onto the
+edge-matching rule; it is one of the six kinds of ground an edge can be, so joining two railways is
+the same event, scored by the same line of code, as joining two woods. It is worth more, because
+that is what the game is about.
 
-1. a **station** stands within reach of it, **and**
-2. that station shares a **network** with a station serving somewhere else.
+What that buys is a second thing to think about on every placement. A tile can fit its neighbours
+beautifully and still leave your main line stopping dead in a field, or join up the railway at the
+cost of a seam through the middle of a wood.
 
-A line that reaches nowhere else carries nobody. Lines that touch anywhere form one network, so
-junctions genuinely connect. Service thins out when a network has more stations than its trains
-can work, and the ground still matters: a sheltered valley floor near water grows well, exposed
-high ground grows slowly and caps out small.
+### The one number the whole game turns on
 
-Everything you eventually see — the streets, the terraces, the tall buildings in the middle of a
-city — appeared because a railway made the place worth living in. Take the station away and the
-place empties again.
+The stack is the only clock, so how many tiles a placement hands back decides everything. It took
+measuring rather than reasoning to get right.
 
-Time passes **only while the trains are running**, so run/hold is the play/pause of the world.
+Paying a tile back for matching whatever neighbours you happen to have makes the stack bottomless:
+a player who always takes the best-scoring placement simply never runs out, and two of the five
+test seeds filled the entire region instead of ending. So a tile comes back only for a fit that
+pleases **three or more** neighbours at once, two for a hole filled all six ways, and quests pay
+generously in score but sparingly in tiles.
 
-## Building a railway
-
-Rail is a graph of nodes and curves, not a grid. You drag a line across the country and it is
-laid as a cubic Bézier that keeps its tangent through a junction, so lines meet smoothly.
-
-The vertical profile is solved rather than draped: the line is smoothed and then clamped to a
-ruling gradient of **4%**, sweeping forwards and backwards until it converges. Free ends are
-allowed to settle into a cutting or up onto an embankment; only a junction pins a height, because
-a junction has to meet the line already there. Anything that still cannot be worked at 4% is
-refused with the reason. Where the profile runs clear of the ground the line is carried on a
-viaduct, and viaduct costs more per metre.
-
-`Q` / `E` — or the raise and lower tools — lift the whole line off the ground before you commit
-it, which is how you get across a valley or under a shoulder of hill.
+Measured again afterwards: a run lasts 44 to 133 placements from a stack of 42, and playing well
+roughly doubles it. `lines/balance.test.ts` plays the game on every CI run to keep that honest.
 
 ---
 
@@ -68,20 +62,22 @@ npm run dev
 
 ---
 
-## Controls
+## Playing
 
 | Input | Effect |
 | --- | --- |
-| Drag | Lay a line (rail tool), or travel over the country (look tool) |
-| Right-drag / `Shift`-drag | Turn the view |
-| Scroll | Zoom |
-| `W` `A` `S` `D` / arrows | Travel |
-| `1`–`6` | Look, rail, raise, lower, build, clear |
-| `Q` / `E` | Lower or raise the line about to be laid |
-| `Space` | Run or hold the trains |
-| `F` | Follow a train |
-| `C` | Ride in the cab |
-| `N` | Day / night |
+| Move the pointer | The tile in hand floats over the hex it would land on |
+| Click | Place it |
+| `Q` / `E` | Turn the tile a sixth of a turn |
+| Drag | Move about the country |
+| Right-drag | Turn the view |
+| Scroll | Come closer |
+| `N` | Day or night |
+| `?` | How to play |
+| `R` | Another country, once a run has ended |
+
+A bar under each border of the floating tile marks where it would agree with what is already there;
+a red one marks a railway about to stop dead.
 
 ---
 
@@ -89,64 +85,70 @@ npm run dev
 
 ```
 src/
-  world/        the region — rules, geometry and the scene
-    heightfield.ts    the land: noise, coast, river carving, sampling, siting
-    terrainSurface.ts one indexed mesh with vertex colours by height and slope
-    rail.ts           the rail graph: Béziers, junctions, the gradient solver
-    trackMesh.ts      ballast, sleepers, railheads, viaduct piers
-    towns.ts          who is served, who grows, fares and upkeep
-    townLayout.ts     streets and the buildings that line them
-    buildings.ts      what you can build, what it costs, what it unlocks
-    trainRun.ts       running a train along a path and reporting its pose
-    scatter.ts        woodland
-    RegionScene.tsx   the scene, the tools and the three cameras
-    ...
+  lines/        the game — rules first, then the picture
+    hex.ts            axial coordinates, packed into integer keys
+    tiles.ts          what a tile is: six edges, and whether a station stands on it
+    rng.ts            a deterministic generator carried inside the game state
+    deck.ts           the stack: tile archetypes, and the quests they arrive with
+    board.ts          placement, edge matching, groups, the rail network, scoring
+    quests.ts         what the country asks for, and whether the board has answered
+    game.ts           a run, as a pure function of the run before it
+    geometry.ts       the whole board as a handful of merged buffers
+    look.ts           colours, light, and the dimensions everything is drawn at
+    BoardScene.tsx    the scene, the ghost tile and the pointer
+    BoardStage.tsx    the canvas, and the two ways it can fail
   store/        one zustand store
-  ui/           the HUD, the tutorial and the field guide
+  ui/           the HUD, the flat tile face, the dialogs
   audio/        procedural sound
 ```
 
 Two deliberate architectural lines:
 
-**The rules never import a renderer.** Everything the country does — settlement, service,
-growth, fares, gradients, river carving — is pure data in, pure data out. That is why the
-simulation can be exercised without a canvas, and why the whole test suite runs headless.
+**The rules never import a renderer.** Everything the game does — drawing tiles, matching edges,
+growing groups, joining the railway, settling quests, scoring — is data in, data out. That is why a
+whole run can be played in a test without a canvas, and why the balance numbers above are
+measurable at all.
 
-**The geometry is separated from the components.** `trackMesh.ts`, `townLayout.ts`,
-`terrainSurface.ts` and `trainRun.ts` compute buffers and poses; the R3F components only mount
-what they return.
+**The geometry is separated from the components.** `geometry.ts` turns the board into buffers and
+`BoardScene.tsx` only mounts what it returns.
 
 ### Some details worth knowing
 
-- **Rivers are routed on a blurred copy of the land.** A strict downhill walk stalls in the
-  first local minimum and leaves a pit on a hillside with the sea showing through it. Routing on
-  a blurred field removes almost all of those, and a standing pull towards the coast covers the
-  rest. The cut is capped, because a bed forced to keep falling will bore a slot canyon through
-  any ridge in its way.
-- **The land runs out before the map does.** Without a falloff at every border the mesh simply
-  stops and the region reads as a slab standing in the sea.
-- **Colour bands are keyed to the region's own height range**, not to fixed metres, so retuning
-  the relief moves the tree line with it instead of turning everything into moorland.
-- **The lighting is deliberately dim.** ACES tone mapping desaturates anything much above 1.0;
-  at the intensities that looked right without it, the entire landscape washed out to cream.
-- **A hidden tab never gets a frame.** React Three Fiber waits on a rAF-driven measurement of
-  its container before it mounts the scene at all, so a map opened in a background tab is not
-  paused — it is never built. `world/frames.ts` shims rAF onto a timer and nudges a measurement,
-  reliably on the visibilitychange when the tab is first looked at, and best-effort by polling
-  before then (background timer throttling makes the earlier path unreliable in a production
-  build).
+- **A tile's rail is a set of edges, not a catalogue of pieces.** Every rail edge runs to the middle
+  of the tile and meets every other one there, so a through line, a curve, a junction and a stub all
+  fall out of one field. Two rail edges are drawn as a single curve through the centre so a turn is
+  a turn rather than a kink; three or more get a spoke each, because a junction really does have a
+  kink in it and the crossing hides it.
+- **The tile face is a fan of six wedges that blend at the corners.** Each corner takes the average
+  of the two edges meeting there. A matched border disappears; a mismatched one shows a seam you can
+  see from across the board without reading anything.
+- **Tiles are generated from archetypes, never edge by edge.** A tile assembled one random edge at a
+  time is confetti, and a board of confetti matches nothing, which reads to the player as the game
+  cheating. Grounds are laid down in contiguous runs instead.
+- **Only the flanks you can see are built.** A tile surrounded on all six sides contributes no side
+  walls, which is most of the geometry on a full board.
+- **Winding is checked by a test, not by eye.** A face wound the wrong way is culled rather than
+  drawn inside out, so the board renders as nothing but its own sides and every other check still
+  passes. The vertex normals are all `+y` and so cannot catch it; `geometry.test.ts` measures the
+  triangles instead. This is not hypothetical — it happened.
+- **Nothing derived is ever selected out of the store.** A selector that builds a value hands back a
+  new object each time it runs, and `useSyncExternalStore` reads that as the store having changed
+  again, forever. Derived values are computed in hooks with `useMemo`.
+- **A hidden tab never gets a frame.** React Three Fiber waits on a rAF-driven measurement of its
+  container before it mounts the scene at all, so a board opened in a background tab is not paused —
+  it is never built. `lines/frames.ts` shims rAF onto a timer and nudges a measurement.
 
 ---
 
 ## Accessibility
 
-- A **genuine WebGL fallback** replaces the canvas only when the browser cannot draw it, or if
-  the context is lost. It never covers a working canvas.
+- A **genuine WebGL fallback** replaces the canvas only when the browser cannot draw it. It never
+  covers a working canvas.
 - An error boundary around the scene reports what failed instead of silently unmounting, which
   otherwise looks exactly like a working renderer drawing nothing.
-- Dialogs are real modals with focus traps, Escape handling and restored focus. The menu uses
-  proper `menuitemradio` / `menuitemcheckbox` semantics.
-- A polite live region announces what the country is doing.
+- The tile in hand is drawn flat in the HUD as well as in the world, and described in words.
+- Dialogs are real modals with focus traps, Escape handling and restored focus.
+- A polite live region announces what each placement did.
 - Day and night are both designed rather than one being an inversion of the other.
 - `prefers-reduced-motion` is respected.
 
@@ -160,15 +162,15 @@ npm run test:run
 
 | File | Covers |
 | --- | --- |
-| `world/heightfield.test.ts` | Generation, sampling, slope, siting, the drawable surface |
-| `world/rail.test.ts` | The gradient solver, laying, junctions, components, runnable paths |
-| `world/towns.test.ts` | Service rules, networks, growth, decline, fares, upkeep, unlocks |
-| `test/probe.test.ts` | That the land has no pits or slot canyons and the rivers reach the sea |
+| `lines/board.test.ts` | Placement, edge matching, scoring, groups, the rail network |
+| `lines/game.test.ts` | A run end to end: the stack, rotation, quests, what the game says |
+| `lines/balance.test.ts` | That a run ends, outlasts its opening stack, and rewards playing well |
+| `lines/geometry.test.ts` | Edge and corner arithmetic, hex picking, and which way the faces point |
 
-The terrain tests are worth a word. Tests about the *shape of the rail graph* run on gentle
-country, on purpose: junctions pin both ends of a line, so on real hills a thousand-metre run
-between two fixed points is often legitimately too steep, and coupling graph tests to terrain
-tuning would make every hill adjustment break something unrelated.
+The balance tests play the game rather than assert about it, with two players: one who always takes
+the highest-scoring placement, and one who puts every tile in the first hole it fits. The bounds are
+wide on purpose — they exist to catch a run that collapses in ten tiles or never ends, not to freeze
+today's tuning.
 
 ---
 

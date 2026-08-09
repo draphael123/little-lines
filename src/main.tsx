@@ -1,6 +1,8 @@
 // First, before anything else: modules that capture requestAnimationFrame at
-// import time must see the patched one. See world/frames.ts.
-import { keepFramesComing } from './world/frames'
+// import time must see the patched one, so the rest of the app is pulled in
+// dynamically after the shim is in place rather than hoisted above it.
+// See lines/frames.ts.
+import { keepFramesComing } from './lines/frames'
 
 keepFramesComing()
 
@@ -10,10 +12,10 @@ const { default: App } = await import('./App')
 await import('./styles/app.css')
 
 if (import.meta.env.DEV) {
-  // A handle on the region for driving the game without a mouse. Pairs with
-  // the renderer seam in world/RegionScene.tsx; stripped from the build.
-  const { useRegion } = await import('./store/useRegion')
-  ;(window as unknown as { REGION_STORE: unknown }).REGION_STORE = useRegion
+  // A handle on the run for driving the game without a mouse. Stripped from
+  // the production build.
+  const { useGame } = await import('./store/useGame')
+  ;(window as unknown as { GAME_STORE: unknown }).GAME_STORE = useGame
 }
 
 const container = document.getElementById('root')

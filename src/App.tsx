@@ -1,101 +1,45 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect } from 'react'
 import { initAudio } from './audio/engine'
-import { selectReports, useRegion } from './store/useRegion'
-import { trainCapacity } from './world/towns'
-import {
-  RegionDock,
-  RegionFanfare,
-  RegionObjective,
-  RegionPanel,
-  RegionReadout,
-  RegionTopBar,
-} from './ui/RegionHUD'
-import { RegionGuide, RegionTutorial } from './ui/RegionTutorial'
-import { objectiveFor } from './world/objective'
-import { RegionStage } from './world/RegionStage'
+import { BoardStage } from './lines/BoardStage'
+import { Hand, Help, Requests, Summary, Ticker, TopBar } from './ui/GameHUD'
+import { useGame, useHeldTile } from './store/useGame'
 
 export default function App() {
-  const seed = useRegion((s) => s.seed)
-  const night = useRegion((s) => s.night)
-  const network = useRegion((s) => s.network)
-  const structures = useRegion((s) => s.structures)
-  const settlements = useRegion((s) => s.settlements)
-  const tool = useRegion((s) => s.tool)
-  const view = useRegion((s) => s.view)
-  const lift = useRegion((s) => s.lift)
-  const trains = useRegion((s) => s.trains)
-  const speed = useRegion((s) => s.speed)
-  const running = useRegion((s) => s.running)
-  const balance = useRegion((s) => s.balance)
-  const served = useRegion((s) => s.served)
-  const announcement = useRegion((s) => s.announcement)
-
-  // The survey is derived, so it is recomputed from exactly the things that
-  // shape it rather than on every store change.
-  const reports = useMemo(
-    () => selectReports({ network, structures, settlements, trains } as Parameters<typeof selectReports>[0]),
-    [network, structures, settlements, trains],
-  )
-
-  const objective = useMemo(
-    () =>
-      objectiveFor({
-        network,
-        structures,
-        reports,
-        balance,
-        running,
-        served,
-        trains,
-        capacity: trainCapacity(structures),
-      }),
-    [network, structures, reports, balance, running, served, trains],
-  )
+  const tiles = useGame((s) => s.game.tiles)
+  const held = useHeldTile()
+  const hovered = useGame((s) => s.hovered)
+  const night = useGame((s) => s.night)
+  const announcement = useGame((s) => s.announcement)
 
   useShortcuts()
-  useClock()
   useAudioUnlock()
 
   return (
     <div className="game">
       <a className="skip" href="#board">
-        Skip to the map
+        Skip to the board
       </a>
 
-      <div className="world" id="board" role="region" aria-label="The region">
-        <RegionStage
-          seed={seed}
+      <div className="world" id="board" role="region" aria-label="The country">
+        <BoardStage
+          tiles={tiles}
+          held={held}
+          hovered={hovered}
           night={night}
-          network={network}
-          structures={structures}
-          settlements={settlements}
-          reports={reports}
-          tool={tool}
-          view={view}
-          lift={lift}
-          trains={trains}
-          speed={speed}
-          running={running}
-          onLay={(result) => useRegion.getState().lay(result)}
-          onAdjust={(edgeId, delta) => useRegion.getState().adjust(edgeId, delta)}
-          onPlace={(x, z, y) => useRegion.getState().place(x, z, y)}
-          onDemolish={(x, z) => useRegion.getState().demolish(x, z)}
-          onStatus={(text, ok) => useRegion.getState().setStatus(text, ok)}
-          onHover={(p) => useRegion.getState().setHovered(p)}
+          onHover={(key) => useGame.getState().hover(key)}
+          onPlace={(key) => useGame.getState().place(key)}
         />
       </div>
 
       <div className="hud">
-        <RegionTopBar />
-        <RegionPanel reports={reports} />
-        <RegionObjective objective={objective} />
-        <RegionDock />
-        <RegionReadout />
+        <TopBar />
+        <Requests />
+        <Hand />
+        <Ticker />
       </div>
 
-      <RegionFanfare />
-      <RegionTutorial />
-      <RegionGuide />
+      <Summary />
+      <Help />
 
       <p aria-live="polite" role="status" className="sr-only">
         {announcement}
@@ -104,41 +48,33 @@ export default function App() {
   )
 }
 
-const TOOL_KEYS = ['look', 'rail', 'raise', 'lower', 'build', 'demolish'] as const
-
 function useShortcuts() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null
       if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return
-      const state = useRegion.getState()
-      if (state.showTutorial || state.showGuide) return
+      const state = useGame.getState()
+      if (state.showHelp) return
 
-      const digit = Number(event.key)
-      if (digit >= 1 && digit <= TOOL_KEYS.length) {
-        event.preventDefault()
-        state.setTool(TOOL_KEYS[digit - 1])
-        return
-      }
       switch (event.key.toLowerCase()) {
-        case ' ':
+        case 'q':
           event.preventDefault()
-          state.setRunning(!state.running)
+          state.turn(-1)
+          break
+        case 'e':
+          event.preventDefault()
+          state.turn(1)
           break
         case 'n':
           state.setNight(!state.night)
           break
-        case 'f':
-          state.setView(state.view === 'follow' ? 'free' : 'follow')
+        case '?':
+          state.setShowHelp(true)
           break
-        case 'c':
-          state.setView(state.view === 'cab' ? 'free' : 'cab')
-          break
-        case 'q':
-          if (state.tool === 'rail') state.setLift(state.lift - 4)
-          break
-        case 'e':
-          if (state.tool === 'rail') state.setLift(state.lift + 4)
+        case 'r':
+          // Only once a run is finished; restarting mid-run by accident is the
+          // one destructive thing in the game.
+          if (state.game.hand === null) state.restart()
           break
       }
     }
@@ -147,30 +83,9 @@ function useShortcuts() {
   }, [])
 }
 
-/**
- * The clock. Time only passes while the trains are running, and the tick is
- * driven from real elapsed time so a throttled background tab resumes sensibly
- * rather than jumping. Deliberately outside the render loop, so the country
- * keeps growing even without a canvas.
- */
-function useClock() {
-  const running = useRegion((s) => s.running)
-  useEffect(() => {
-    if (!running) return
-    let last = performance.now()
-    const id = window.setInterval(() => {
-      const now = performance.now()
-      const dt = Math.min(1.5, (now - last) / 1000)
-      last = now
-      useRegion.getState().advance(dt)
-    }, 350)
-    return () => window.clearInterval(id)
-  }, [running])
-}
-
 /** Browsers only allow an audio context after a gesture; take the first one. */
 function useAudioUnlock() {
-  const audio = useRegion((s) => s.audio)
+  const audio = useGame((s) => s.audio)
   useEffect(() => {
     if (!audio.music && !audio.sfx) return
     const unlock = () => {

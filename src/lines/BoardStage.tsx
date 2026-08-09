@@ -3,22 +3,29 @@ import { Canvas } from '@react-three/fiber'
 import { ACESFilmicToneMapping, PCFSoftShadowMap } from 'three'
 import { SceneBoundary } from './SceneBoundary'
 import { detectWebGL } from './webgl'
-import { RegionScene, type RegionSceneProps } from './RegionScene'
+import { BoardScene, type BoardSceneProps } from './BoardScene'
 
-/** The canvas for the continuous region. */
-export function RegionStage(props: RegionSceneProps) {
+/**
+ * The canvas, and the two things that can go wrong with it.
+ *
+ * The fallback replaces the canvas only when the browser genuinely cannot draw
+ * it — it never covers a working one. The boundary is for the other failure:
+ * React unmounts a broken subtree silently, and inside a canvas that is
+ * indistinguishable from a renderer quietly drawing nothing.
+ */
+export function BoardStage(props: BoardSceneProps) {
   const supported = useMemo(() => detectWebGL(), [])
   const [failed, setFailed] = useState<string | null>(null)
 
   if (!supported || failed) {
     return (
-      <div className="fallback" role="region" aria-label="3D map unavailable">
+      <div className="fallback" role="region" aria-label="The board cannot be drawn">
         <div>
-          <h2>{failed ? 'The region could not be drawn' : 'This browser cannot draw the map'}</h2>
+          <h2>{failed ? 'The board could not be drawn' : 'This browser cannot draw the board'}</h2>
           <p className="lede">
             {failed
               ? `Something in the scene failed while it was being built: ${failed}.`
-              : 'Little Lines draws its landscape with WebGL, and this browser has not made it available.'}
+              : 'Little Lines draws its country with WebGL, and this browser has not made it available.'}
           </p>
         </div>
       </div>
@@ -30,7 +37,7 @@ export function RegionStage(props: RegionSceneProps) {
       <Canvas
         shadows={{ type: PCFSoftShadowMap }}
         dpr={[1, 1.75]}
-        camera={{ position: [0, 1400, 1800], fov: 42, near: 5, far: 30000 }}
+        camera={{ position: [0, 9, 11], fov: 42, near: 0.5, far: 400 }}
         gl={{ antialias: true, powerPreference: 'high-performance' }}
         onCreated={({ gl }) => {
           gl.toneMapping = ACESFilmicToneMapping
@@ -39,7 +46,7 @@ export function RegionStage(props: RegionSceneProps) {
       >
         <SceneBoundary onError={setFailed}>
           <Suspense fallback={null}>
-            <RegionScene {...props} />
+            <BoardScene {...props} />
           </Suspense>
         </SceneBoundary>
       </Canvas>

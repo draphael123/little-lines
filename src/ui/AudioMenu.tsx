@@ -1,10 +1,10 @@
 import { audioAvailable, playSfx } from '../audio/engine'
-import { useRegion } from '../store/useRegion'
+import { useGame } from '../store/useGame'
 
 /** Separate switches for music, effects and master volume. Opt-in by default. */
 export function AudioMenu() {
-  const audio = useRegion((s: import('../store/useRegion').RegionState) => s.audio)
-  const setAudio = useRegion((s: import('../store/useRegion').RegionState) => s.setAudio)
+  const audio = useGame((s) => s.audio)
+  const setAudio = useGame((s) => s.setAudio)
   const available = audioAvailable()
 
   return (
