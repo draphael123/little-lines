@@ -266,7 +266,19 @@ Same architectural line as Little Lines: **the rules never import a renderer**. 
 `summons.ts` and `game.ts` are pure data in, data out, which is why a whole binding can be played
 out in a test in a few milliseconds.
 
-Two details worth knowing:
+## The look
+
+The room is a dark floor, a mark at the centre, seven candles round the edge and nothing else. All
+of it is generated at load — there are no image files. The candles are not decoration: they gutter
+as the pressure comes up and go out one by one when something is through the chalk, so the light in
+the room is a readout of how the night is going.
+
+Chalk under load runs from cold cream through ember to white, which is the only view you get of the
+polar field. Each line is drawn twice — a soft wide body, then a broken highlight on an irregular
+dash pattern, because an unbroken stroke is the one thing that reads instantly as vector art rather
+than as chalk on stone.
+
+Three details worth knowing:
 
 - **A stroke is continuous, so a gap has to be a separate stroke.** Lifting the chalk and putting
   it down again is a new stroke; drawing an open ring as one stroke closes the gap with a chord.
@@ -275,6 +287,12 @@ Two details worth knowing:
   transit, and since a dull summons spends most of a night in transit, the circle was barely
   touched and — worse — nothing on screen showed where it was. Pressure you cannot see is pressure
   you cannot answer.
+- **The frame budget was measured, not guessed.** Profiling each layer by switching it off found
+  that the bloom was the most expensive thing in the frame by a distance, and that the floor was
+  being rescaled on every frame. The bloom now renders at a third of the viewport — it is a blur,
+  so the resolution never shows — and the floor, the vignette and the tiled grain are baked once
+  per resize. Soft blobs are pre-rendered sprites rather than a `createRadialGradient` per blob per
+  frame. That took a lit binding from 45fps to 58 under *software* rendering.
 
 ## Controls
 

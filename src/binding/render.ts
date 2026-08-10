@@ -10,7 +10,7 @@
 import { BINS, INNER_R, NOMINAL_R, OUTER_R, binAngle, binDelta, binOf } from './seal.ts'
 import type { Seal, Sigil, Vec } from './seal.ts'
 import type { Game } from './game.ts'
-import { makeDab, makeFloor, makeGrain } from './textures.ts'
+import { makeBlob, makeFloor, makeGrain, makeVignette, tileGrain } from './textures.ts'
 
 export interface View {
   w: number
@@ -46,19 +46,47 @@ interface Blob {
   phase: number
 }
 
+interface Candle {
+  x: number
+  y: number
+  phase: number
+  height: number
+  /** Snuffed by whatever is in the circle, and slowly relit. */
+  out: number
+}
+
 export interface Visuals {
   floor: HTMLCanvasElement
   grain: HTMLCanvasElement
-  dab: HTMLCanvasElement
+  /** The grain pre-tiled to the viewport, so it is one blit and not two dozen. */
+  grainSheet: HTMLCanvasElement
+  /** The floor at viewport size, so the per-frame draw is 1:1 and not scaled. */
+  floorSheet: HTMLCanvasElement
+  vignette: HTMLCanvasElement
+  smokeSprite: HTMLCanvasElement
+  coreSprite: HTMLCanvasElement
+  poolSprite: HTMLCanvasElement
   glow: HTMLCanvasElement
   glowCtx: CanvasRenderingContext2D | null
+  /** Half-resolution scratch, where the bloom is blurred cheaply. */
+  blur: HTMLCanvasElement
+  blurCtx: CanvasRenderingContext2D | null
   motes: Mote[]
   sparks: Spark[]
   smoke: Blob[]
+  candles: Candle[]
   t: number
   blurOk: boolean
   reduced: boolean
 }
+
+/**
+ * The bloom buffer is drawn at a fraction of the viewport. It is a blur, so
+ * the resolution is invisible in the result, and both the drawing into it and
+ * the blur out of it cost by area — it was the single most expensive layer in
+ * the frame before it was scaled down.
+ */
+const GLOW_DIV = 3
 
 const VISIBLE_R = 600
 
@@ -81,22 +109,67 @@ export function toWorld(view: View, px: number, py: number): Vec {
 export function createVisuals(reduced: boolean): Visuals {
   const glow = document.createElement('canvas')
   const probe = document.createElement('canvas').getContext('2d')
+  // Counter-rotating, at mixed radii and sizes. Blobs that all orbit the same
+  // way at even spacing read as a spinning disc; half of them going the other
+  // way reads as something turning over inside itself.
   const smoke: Blob[] = []
-  for (let i = 0; i < 26; i++) {
+  for (let i = 0; i < 20; i++) {
     smoke.push({
-      angle: (i / 26) * Math.PI * 2,
-      radius: 30 + (i % 5) * 26,
-      size: 70 + (i % 7) * 22,
-      drift: 0.1 + (i % 4) * 0.05,
+      angle: ((i * 137.5) / 180) * Math.PI,
+      radius: 16 + ((i * 37) % 128),
+      size: 54 + ((i * 53) % 120),
+      drift: (0.05 + ((i * 17) % 9) * 0.02) * (i % 2 === 0 ? 1 : -1),
       phase: i * 1.7,
     })
   }
+  // Set by hand rather than evenly, because seven candles at exact 51-degree
+  // spacing read as a UI element and a room does not look like that.
+  const candles: Candle[] = [
+    [-24, 512],
+    [38, 468],
+    [96, 530],
+    [152, 486],
+    [206, 545],
+    [262, 474],
+    [318, 520],
+  ].map(([deg, radius], i) => {
+    const a = (deg / 180) * Math.PI
+    return {
+      x: Math.cos(a) * radius,
+      y: Math.sin(a) * radius,
+      phase: i * 2.3,
+      height: 0.8 + (i % 3) * 0.2,
+      out: 0,
+    }
+  })
+
+  const grain = makeGrain(220)
+  const blur = document.createElement('canvas')
   return {
     floor: makeFloor(1024),
-    grain: makeGrain(220),
-    dab: makeDab(64),
+    grain,
+    grainSheet: tileGrain(grain, 1, 1),
+    floorSheet: document.createElement('canvas'),
+    vignette: makeVignette(1, 1, 0, 0),
+    smokeSprite: makeBlob(160, [
+      [0, 'rgba(52,20,66,1)'],
+      [0.45, 'rgba(26,9,36,0.5)'],
+      [1, 'rgba(6,3,10,0)'],
+    ]),
+    coreSprite: makeBlob(96, [
+      [0, 'rgba(4,2,8,1)'],
+      [1, 'rgba(4,2,8,0)'],
+    ]),
+    poolSprite: makeBlob(192, [
+      [0, 'rgba(255,186,110,1)'],
+      [0.35, 'rgba(190,110,52,0.36)'],
+      [1, 'rgba(40,18,8,0)'],
+    ]),
+    candles,
     glow,
     glowCtx: glow.getContext('2d'),
+    blur,
+    blurCtx: blur.getContext('2d'),
     motes: [],
     sparks: [],
     smoke,
@@ -112,6 +185,9 @@ function mix(a: number[], b: number[], t: number): string {
     a[1] + (b[1] - a[1]) * k,
   )},${Math.round(a[2] + (b[2] - a[2]) * k)})`
 }
+
+/** An irregular dash pattern, so the highlight never falls into a rhythm. */
+const GRAIN_DASH = [1.4, 2.6, 4.2, 1.8, 2.4, 1.2, 5.1, 2.9]
 
 const CHALK = [226, 219, 199]
 const EMBER = [255, 148, 66]
@@ -148,9 +224,19 @@ export function render(
   vis.t += dt
   const { scale, cx, cy } = view
 
-  if (vis.glow.width !== Math.floor(view.w / 2) || vis.glow.height !== Math.floor(view.h / 2)) {
-    vis.glow.width = Math.max(1, Math.floor(view.w / 2))
-    vis.glow.height = Math.max(1, Math.floor(view.h / 2))
+  if (vis.glow.width !== Math.floor(view.w / GLOW_DIV) || vis.glow.height !== Math.floor(view.h / GLOW_DIV)) {
+    vis.glow.width = Math.max(1, Math.floor(view.w / GLOW_DIV))
+    vis.glow.height = Math.max(1, Math.floor(view.h / GLOW_DIV))
+    vis.blur.width = vis.glow.width
+    vis.blur.height = vis.glow.height
+    vis.grainSheet = tileGrain(vis.grain, view.w, view.h)
+    vis.vignette = makeVignette(view.w, view.h, view.cx, view.cy)
+
+    const size = Math.max(view.w, view.h) * 1.1
+    vis.floorSheet.width = Math.max(1, Math.ceil(size))
+    vis.floorSheet.height = Math.max(1, Math.ceil(size))
+    const fc = vis.floorSheet.getContext('2d')
+    if (fc) fc.drawImage(vis.floor, 0, 0, size, size)
   }
   const glowCtx = vis.glowCtx
   if (glowCtx) {
@@ -169,15 +255,20 @@ export function render(
   ctx.translate(sx, sy)
 
   const world = (p: Vec) => ({ x: cx + p.x * scale, y: cy + p.y * scale })
-  const toGlow = (p: Vec) => ({ x: (cx + p.x * scale + sx) / 2, y: (cy + p.y * scale + sy) / 2 })
+  const toGlow = (p: Vec) => ({
+    x: (cx + p.x * scale + sx) / GLOW_DIV,
+    y: (cy + p.y * scale + sy) / GLOW_DIV,
+  })
 
   drawFloor(ctx, vis, view)
+  drawCandles(ctx, glowCtx, game, vis, view, dt, world, toGlow)
   drawBrazier(ctx, game, view, vis)
   drawEntity(ctx, game, vis, view, dt)
+  drawMark(ctx, game, view)
   if (game.phase === 'inscribe') drawGuides(ctx, view, vis)
 
   const load = loadField(game)
-  drawChalk(ctx, glowCtx, game.seal, load, world, toGlow, scale, vis)
+  drawChalk(ctx, glowCtx, game.seal, load, world, scale)
   if (drawing && drawing.length > 1) drawPending(ctx, drawing, world, scale)
   drawSigils(ctx, glowCtx, game.seal, world, toGlow, scale, vis)
   drawPressure(ctx, glowCtx, game, world, toGlow, scale)
@@ -186,31 +277,108 @@ export function render(
   drawParticles(ctx, vis, world, scale)
 
   if (glowCtx) {
+    // Blur costs by area, so it happens on the half-size buffer and is then
+    // scaled up, rather than blurring a full-viewport draw.
+    let source = vis.glow
+    const blurCtx = vis.blurCtx
+    if (vis.blurOk && blurCtx) {
+      blurCtx.setTransform(1, 0, 0, 1, 0, 0)
+      blurCtx.clearRect(0, 0, vis.blur.width, vis.blur.height)
+      blurCtx.filter = `blur(${Math.max(2, Math.round(view.w / 420))}px)`
+      blurCtx.drawImage(vis.glow, 0, 0)
+      blurCtx.filter = 'none'
+      source = vis.blur
+    }
     ctx.save()
     ctx.globalCompositeOperation = 'lighter'
-    if (vis.blurOk) ctx.filter = `blur(${Math.max(4, Math.round(view.w / 150))}px)`
     ctx.globalAlpha = vis.blurOk ? 0.95 : 0.5
-    ctx.drawImage(vis.glow, -sx, -sy, view.w, view.h)
-    ctx.filter = 'none'
+    ctx.drawImage(source, -sx, -sy, view.w, view.h)
     ctx.restore()
   }
 
   if (pointer && (game.phase === 'inscribe' || game.phase === 'bind')) {
-    drawCursor(ctx, game, pointer, world, scale, vis)
+    drawCursor(ctx, game, pointer, world, scale)
   }
 
   ctx.restore()
 
-  drawVignette(ctx, view)
-  drawGrain(ctx, vis, view)
+  drawVignette(ctx, vis)
+  drawGrain(ctx, vis)
 }
 
 function drawFloor(ctx: CanvasRenderingContext2D, vis: Visuals, view: View): void {
-  const size = Math.max(view.w, view.h) * 1.1
-  ctx.save()
-  ctx.globalAlpha = 1
-  ctx.drawImage(vis.floor, view.cx - size / 2, view.cy - size / 2, size, size)
-  ctx.restore()
+  ctx.drawImage(
+    vis.floorSheet,
+    view.cx - vis.floorSheet.width / 2,
+    view.cy - vis.floorSheet.height / 2,
+  )
+}
+
+/**
+ * Candles round the edge of the room.
+ *
+ * They are the only light that is not the circle itself, so they carry most of
+ * the depth in the frame — and they double as a readout: they gutter as the
+ * pressure comes up, and something getting through the chalk puts them out.
+ */
+function drawCandles(
+  ctx: CanvasRenderingContext2D,
+  glowCtx: CanvasRenderingContext2D | null,
+  game: Game,
+  vis: Visuals,
+  view: View,
+  dt: number,
+  world: (p: Vec) => Vec,
+  toGlow: (p: Vec) => Vec,
+): void {
+  const lit = game.phase === 'bind' || game.phase === 'broken'
+  const strain = lit ? Math.min(1, game.t / game.summon.duration) : 0
+  const failing = !!game.failing
+
+  for (const candle of vis.candles) {
+    if (failing && candle.out <= 0 && Math.random() < dt * 1.4) candle.out = 1
+    if (candle.out > 0) candle.out = Math.max(0, candle.out - dt * 0.5)
+
+    const wind = vis.reduced ? 1 : 0.78 + 0.22 * Math.sin(vis.t * 9.1 + candle.phase)
+    const gust = vis.reduced ? 0 : Math.sin(vis.t * 2.3 + candle.phase * 1.7) * 0.14 * strain
+    const life = Math.max(0, 1 - candle.out) * (wind - gust)
+    if (life <= 0.02) continue
+
+    const p = world(candle)
+    const pool = 150 * view.scale * candle.height
+
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.globalAlpha = 0.3 * life
+    ctx.drawImage(vis.poolSprite, p.x - pool, p.y - pool, pool * 2, pool * 2)
+    ctx.restore()
+
+    // The stub, and the flame sitting on it.
+    ctx.save()
+    ctx.translate(p.x, p.y)
+    ctx.fillStyle = 'rgba(214,201,176,0.5)'
+    const w = 3.4 * view.scale * 1.5
+    ctx.fillRect(-w / 2, -w * 0.4, w, w * 1.8 * candle.height)
+    ctx.fillStyle = `rgba(255,226,168,${0.65 * life})`
+    ctx.beginPath()
+    ctx.ellipse(0, -w * 0.9, w * 0.34, w * 0.75 * life, 0, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.restore()
+
+    if (glowCtx) {
+      const gp = toGlow(candle)
+      glowCtx.save()
+      glowCtx.globalCompositeOperation = 'lighter'
+      const fg = glowCtx.createRadialGradient(gp.x, gp.y, 0, gp.x, gp.y, 20 * view.scale)
+      fg.addColorStop(0, `rgba(255,204,140,${0.8 * life})`)
+      fg.addColorStop(1, 'rgba(255,150,70,0)')
+      glowCtx.fillStyle = fg
+      glowCtx.beginPath()
+      glowCtx.arc(gp.x, gp.y, 20 * view.scale, 0, Math.PI * 2)
+      glowCtx.fill()
+      glowCtx.restore()
+    }
+  }
 }
 
 /** The mark at the centre, and the light it throws. */
@@ -236,17 +404,34 @@ function drawBrazier(ctx: CanvasRenderingContext2D, game: Game, view: View, vis:
   ctx.fill()
   ctx.restore()
 
-  // The mark itself.
+}
+
+/**
+ * The mark at the centre — the only thing in the room drawn with a steady
+ * hand, because you did not draw it. Laid over the smoke rather than under
+ * it, or the thing you summoned covers up the thing that summoned it.
+ */
+function drawMark(ctx: CanvasRenderingContext2D, game: Game, view: View): void {
+  const lit = game.phase === 'bind' || game.phase === 'broken'
   ctx.save()
   ctx.translate(view.cx, view.cy)
-  ctx.strokeStyle = lit ? 'rgba(255,214,170,0.85)' : 'rgba(220,190,150,0.4)'
-  ctx.lineWidth = Math.max(1, 1.6 * view.scale * 1.2)
-  const r = 16 * view.scale
+  ctx.strokeStyle = lit ? 'rgba(255,214,170,0.9)' : 'rgba(220,190,150,0.45)'
+  ctx.lineWidth = Math.max(1, 1.2 * view.scale * 1.2)
+  const u = view.scale
   ctx.beginPath()
+  ctx.arc(0, 0, 30 * u, 0, Math.PI * 2)
+  ctx.moveTo(19 * u, 0)
+  ctx.arc(0, 0, 19 * u, 0, Math.PI * 2)
   for (let i = 0; i < 3; i++) {
     const a = (i / 3) * Math.PI * 2 - Math.PI / 2
-    ctx.moveTo(0, 0)
-    ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r)
+    const b = ((i + 1) / 3) * Math.PI * 2 - Math.PI / 2
+    if (i === 0) ctx.moveTo(Math.cos(a) * 19 * u, Math.sin(a) * 19 * u)
+    ctx.lineTo(Math.cos(b) * 19 * u, Math.sin(b) * 19 * u)
+  }
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2
+    ctx.moveTo(Math.cos(a) * 30 * u, Math.sin(a) * 30 * u)
+    ctx.lineTo(Math.cos(a) * 38 * u, Math.sin(a) * 38 * u)
   }
   ctx.stroke()
   ctx.restore()
@@ -287,7 +472,9 @@ function drawEntity(
 ): void {
   if (game.phase !== 'bind' && game.phase !== 'broken') return
   const pull = game.probes.length ? binAngle(Math.round(game.probes[0].bin)) : 0
-  const intensity = Math.min(1, 0.35 + game.t / game.summon.duration)
+  // Thin at the start of a night and crowded by the end, so the room fills up
+  // as the pressure does.
+  const intensity = Math.min(1, 0.28 + 0.85 * (game.t / game.summon.duration))
 
   ctx.save()
   ctx.translate(view.cx, view.cy)
@@ -298,15 +485,15 @@ function drawEntity(
     const wobble = Math.sin(vis.t * 0.7 + blob.phase) * 12 * view.scale
     const x = Math.cos(blob.angle) * r + wobble
     const y = Math.sin(blob.angle) * r + wobble * 0.6
-    const size = blob.size * view.scale * (0.8 + toward * 0.5)
-    const g = ctx.createRadialGradient(x, y, 0, x, y, size)
-    g.addColorStop(0, `rgba(46,18,58,${0.3 + toward * 0.28 * intensity})`)
-    g.addColorStop(0.6, `rgba(22,8,30,${0.16 * intensity})`)
-    g.addColorStop(1, 'rgba(6,3,10,0)')
-    ctx.fillStyle = g
-    ctx.beginPath()
-    ctx.arc(x, y, size, 0, Math.PI * 2)
-    ctx.fill()
+    const breath = 1 + Math.sin(vis.t * 0.9 + blob.phase * 0.6) * 0.12
+    const size = blob.size * view.scale * (0.8 + toward * 0.5) * breath
+    ctx.globalAlpha = Math.min(1, 0.26 + toward * 0.3 * intensity)
+    ctx.drawImage(vis.smokeSprite, x - size, y - size, size * 2, size * 2)
+
+    // A dark core inside the mass, so it reads as volume rather than haze.
+    const core = size * 0.42
+    ctx.globalAlpha = Math.min(1, 0.34 * intensity * (0.5 + toward * 0.5))
+    ctx.drawImage(vis.coreSprite, x - core, y - core, core * 2, core * 2)
   }
   ctx.restore()
 }
@@ -325,9 +512,7 @@ function drawChalk(
   seal: Seal,
   load: Float32Array,
   world: (p: Vec) => Vec,
-  toGlow: (p: Vec) => Vec,
   scale: number,
-  vis: Visuals,
 ): void {
   ctx.save()
   ctx.lineCap = 'round'
@@ -357,17 +542,36 @@ function drawChalk(
       // t folds wear and load together: worn chalk fades, loaded chalk burns.
       const heat = Math.max(0, t * 2 - 1)
       const wear = Math.min(1, t * 2)
-      ctx.strokeStyle = mix(CHALK, heat > 0 ? EMBER : CHALK, Math.min(1, heat * 1.6))
-      ctx.globalAlpha = 0.16 + wear * 0.7
-      ctx.lineWidth = Math.max(1, (1.1 + wear * 2.4 + heat * 2.2) * scale * 1.5)
-      ctx.beginPath()
-      const p0 = world(stroke.points[runStart])
-      ctx.moveTo(p0.x, p0.y)
-      for (let i = runStart + 1; i <= end; i++) {
-        const p = world(stroke.points[i])
-        ctx.lineTo(p.x, p.y)
+      const colour = mix(CHALK, heat > 0 ? EMBER : CHALK, Math.min(1, heat * 1.6))
+      const width = Math.max(1, (1.1 + wear * 2.4 + heat * 2.2) * scale * 1.5)
+
+      const trace = () => {
+        ctx.beginPath()
+        const p0 = world(stroke.points[runStart])
+        ctx.moveTo(p0.x, p0.y)
+        for (let i = runStart + 1; i <= end; i++) {
+          const p = world(stroke.points[i])
+          ctx.lineTo(p.x, p.y)
+        }
+        ctx.stroke()
       }
-      ctx.stroke()
+
+      // The body of the line, laid down soft and wide...
+      ctx.setLineDash([])
+      ctx.strokeStyle = colour
+      ctx.globalAlpha = (0.16 + wear * 0.7) * 0.72
+      ctx.lineWidth = width
+      trace()
+
+      // ...then a broken highlight over it. Chalk skips over stone, and an
+      // unbroken line is the one thing that reads instantly as vector art.
+      ctx.setLineDash(GRAIN_DASH.map((d) => d * scale * 1.5))
+      ctx.lineDashOffset = (runStart * 13) % 37
+      ctx.globalAlpha = (0.16 + wear * 0.7) * 0.55
+      ctx.lineWidth = width * 0.66
+      ctx.strokeStyle = mix([255, 250, 238], [255, 196, 130], Math.min(1, heat))
+      trace()
+      ctx.setLineDash([])
     }
 
     for (let i = 1; i < stroke.points.length; i++) {
@@ -399,14 +603,12 @@ function drawChalk(
         const worn = 1 - Math.min(1, seal.integrity[b] / ceiling)
         const a = world(stroke.points[i - 1])
         const c = world(p)
-        const ga = toGlow({ x: 0, y: 0 })
-        void ga
         glowCtx.strokeStyle = mix(EMBER, WHITE_HOT, worn)
         glowCtx.globalAlpha = Math.min(1, l * (0.75 + worn * 0.25))
         glowCtx.lineWidth = Math.max(1.5, (2.2 + l * 5) * scale * 0.9)
         glowCtx.beginPath()
-        glowCtx.moveTo(a.x / 2, a.y / 2)
-        glowCtx.lineTo(c.x / 2, c.y / 2)
+        glowCtx.moveTo(a.x / GLOW_DIV, a.y / GLOW_DIV)
+        glowCtx.lineTo(c.x / GLOW_DIV, c.y / GLOW_DIV)
         glowCtx.stroke()
       }
       glowCtx.restore()
@@ -415,7 +617,6 @@ function drawChalk(
 
   ctx.globalAlpha = 1
   ctx.restore()
-  void vis
 }
 
 /** The line under the cursor, before it is committed. */
@@ -484,7 +685,7 @@ function drawSigils(
 ): void {
   for (const sigil of seal.sigils) {
     const p = world(sigil.at)
-    const size = 20 * scale * 1.4
+    const size = 27 * scale * 1.4
     const colour = SIGIL_COLOUR[sigil.kind] ?? CHALK
     const alive = !sigil.spent
     const pulse = 0.75 + 0.25 * Math.sin(vis.t * 2 + sigil.bin)
@@ -492,7 +693,7 @@ function drawSigils(
     ctx.save()
     ctx.translate(p.x, p.y)
     ctx.rotate(Math.atan2(sigil.at.y, sigil.at.x) + Math.PI / 2)
-    ctx.lineWidth = Math.max(1, 1.7 * scale * 1.5)
+    ctx.lineWidth = Math.max(1.2, 2 * scale * 1.5)
     ctx.strokeStyle = alive
       ? `rgba(${colour[0]},${colour[1]},${colour[2]},${0.5 + pulse * 0.35})`
       : 'rgba(110,100,92,0.25)'
@@ -662,7 +863,6 @@ function drawCursor(
   pointer: Vec,
   world: (p: Vec) => Vec,
   scale: number,
-  vis: Visuals,
 ): void {
   const p = world(pointer)
   const r = Math.hypot(pointer.x, pointer.y)
@@ -686,39 +886,23 @@ function drawCursor(
     ctx.setLineDash([])
   }
   ctx.restore()
-  void vis
 }
 
-function drawVignette(ctx: CanvasRenderingContext2D, view: View): void {
-  const g = ctx.createRadialGradient(
-    view.cx,
-    view.cy,
-    Math.min(view.w, view.h) * 0.28,
-    view.cx,
-    view.cy,
-    Math.max(view.w, view.h) * 0.78,
-  )
-  g.addColorStop(0, 'rgba(0,0,0,0)')
-  g.addColorStop(1, 'rgba(0,0,0,0.82)')
+function drawVignette(ctx: CanvasRenderingContext2D, vis: Visuals): void {
   ctx.save()
   ctx.setTransform(1, 0, 0, 1, 0, 0)
-  ctx.fillStyle = g
-  ctx.fillRect(0, 0, view.w, view.h)
+  ctx.drawImage(vis.vignette, 0, 0)
   ctx.restore()
 }
 
-function drawGrain(ctx: CanvasRenderingContext2D, vis: Visuals, view: View): void {
+function drawGrain(ctx: CanvasRenderingContext2D, vis: Visuals): void {
   ctx.save()
   ctx.setTransform(1, 0, 0, 1, 0, 0)
   ctx.globalCompositeOperation = 'overlay'
   ctx.globalAlpha = 0.5
   const ox = Math.floor(Math.random() * vis.grain.width)
   const oy = Math.floor(Math.random() * vis.grain.height)
-  for (let x = -ox; x < view.w; x += vis.grain.width) {
-    for (let y = -oy; y < view.h; y += vis.grain.height) {
-      ctx.drawImage(vis.grain, x, y)
-    }
-  }
+  ctx.drawImage(vis.grainSheet, -ox, -oy)
   ctx.restore()
 }
 

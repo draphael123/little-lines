@@ -105,22 +105,51 @@ export function makeGrain(size: number): HTMLCanvasElement {
   return c
 }
 
-/** A soft round dab, stamped along a stroke to make chalk look like chalk. */
-export function makeDab(size: number): HTMLCanvasElement {
+/**
+ * A soft radial sprite, drawn once and then blitted.
+ *
+ * Everything soft in this game — smoke, its dark core, a candle's pool of
+ * light — was a `createRadialGradient` per blob per frame, which is an
+ * allocation and a fill on every one. Baking each into a sprite and scaling it
+ * turns fifty gradient builds a frame into fifty `drawImage` calls.
+ */
+export function makeBlob(size: number, stops: [number, string][]): HTMLCanvasElement {
   const c = document.createElement('canvas')
   c.width = size
   c.height = size
   const ctx = c.getContext('2d')
   if (!ctx) return c
   const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
-  g.addColorStop(0, 'rgba(255,255,255,1)')
-  g.addColorStop(0.55, 'rgba(255,255,255,0.5)')
-  g.addColorStop(1, 'rgba(255,255,255,0)')
+  for (const [at, colour] of stops) g.addColorStop(at, colour)
   ctx.fillStyle = g
   ctx.fillRect(0, 0, size, size)
-  // Bite a little texture out of it, so an edge is never perfectly smooth.
-  ctx.globalCompositeOperation = 'destination-out'
-  ctx.globalAlpha = 0.5
-  ctx.drawImage(noiseCanvas(12, 5150), 0, 0, size, size)
+  return c
+}
+
+/** The film grain, pre-tiled to cover a viewport in one blit. */
+export function tileGrain(tile: HTMLCanvasElement, w: number, h: number): HTMLCanvasElement {
+  const c = document.createElement('canvas')
+  c.width = Math.max(1, w + tile.width)
+  c.height = Math.max(1, h + tile.height)
+  const ctx = c.getContext('2d')
+  if (!ctx) return c
+  for (let x = 0; x < c.width; x += tile.width) {
+    for (let y = 0; y < c.height; y += tile.height) ctx.drawImage(tile, x, y)
+  }
+  return c
+}
+
+/** The vignette, which only ever changes when the window does. */
+export function makeVignette(w: number, h: number, cx: number, cy: number): HTMLCanvasElement {
+  const c = document.createElement('canvas')
+  c.width = Math.max(1, w)
+  c.height = Math.max(1, h)
+  const ctx = c.getContext('2d')
+  if (!ctx) return c
+  const g = ctx.createRadialGradient(cx, cy, Math.min(w, h) * 0.28, cx, cy, Math.max(w, h) * 0.78)
+  g.addColorStop(0, 'rgba(0,0,0,0)')
+  g.addColorStop(1, 'rgba(0,0,0,0.82)')
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, w, h)
   return c
 }
