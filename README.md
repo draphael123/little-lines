@@ -138,6 +138,52 @@ what they return.
 
 ---
 
+## The lookout (a second demo)
+
+`firewatch.html` is a separate, self-contained demo that shares nothing with the railway but the
+build: **a dusk forest, a medieval watchtower you climb into, and a column of smoke on the far
+ridge.**
+
+```bash
+npm run dev          # then open http://localhost:5801/firewatch.html
+```
+
+| Input | Effect |
+| --- | --- |
+| `W` `A` `S` `D` | Walk (hold `Shift` to run) |
+| Mouse | Look — pointer lock, or drag if the browser refuses it |
+| `E` | Take the ladder, up or down |
+| `R` | Radio the smoke in, once you are up and facing it |
+
+It is plain Three.js rather than React Three Fiber, and it fetches nothing: the sky is a shader,
+the ridges are noise turned into silhouettes, the wood and the grass are instanced, and the
+tower, the town and the maps on the table are all geometry and canvas textures generated at load.
+
+```
+src/firewatch/
+  lookout.ts    the rules: ground, woodland, the road, the ladder, bearings
+  noise.ts      one seeded value-noise field, shared by everything
+  scene.ts      sky, ridges, ground, road, wood, grass, smoke, light
+  tower.ts      the watchtower: stone base, timber cage, parapet, fittings
+  town.ts       the town in the valley, drawn as flat silhouettes past the fog
+  player.ts     walking, looking and the climb
+  main.ts       the loop, the bloom pass and the radio traffic
+```
+
+The same split as the railway: `lookout.ts` never imports a renderer, so the ladder, the bearings
+and where the trees stand are all exercised headlessly in `lookout.test.ts`.
+
+Two things worth knowing:
+
+- **Anything past about three hundred metres ignores the fog.** At this fog density a ridge two
+  kilometres out is pure fog colour, so the ridges and the town carry their haze in flat colour
+  instead. That is also why the ridge tints are keyed to the fog colour: get them wrong and the
+  join between the fogged ground and the flat ridge shows as a step.
+- **The deck stands above the canopy on purpose.** Trees shorten towards the clearing, so the
+  climb ends with a view over a bowl rather than into a wall of branches.
+
+---
+
 ## Accessibility
 
 - A **genuine WebGL fallback** replaces the canvas only when the browser cannot draw it, or if

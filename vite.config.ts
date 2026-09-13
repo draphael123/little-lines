@@ -11,6 +11,10 @@ export default defineConfig({
   build: {
     target: 'es2022',
     chunkSizeWarningLimit: 1400,
+    // Two pages: the railway, and the lookout demo at /firewatch.html.
+    rollupOptions: {
+      input: { main: 'index.html', firewatch: 'firewatch.html' },
+    },
   },
   test: {
     globals: true,

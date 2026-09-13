@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Fire Watch — a lookout in the woods</title>
+    <meta
+      name="description"
+      content="A small first-person demo: a dusk forest, a treehouse lookout you climb into, and a column of smoke on the far ridge."
+    />
+    <meta name="theme-color" content="#1b1116" />
+    <meta name="color-scheme" content="dark" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <style>
+      :root {
+        --ink: #f6e3cf;
+        --dim: rgba(246, 227, 207, 0.62);
+        --ember: #ffb257;
+        --face: 'Futura', 'Avenir Next', 'Trebuchet MS', ui-sans-serif, system-ui, sans-serif;
+      }
+      * { box-sizing: border-box; }
+      /* Layout rules below set `display`, which would otherwise beat `hidden`. */
+      [hidden] { display: none !important; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        background: #1b1116;
+        color: var(--ink);
+        font-family: var(--face);
+        overflow: hidden;
+        -webkit-font-smoothing: antialiased;
+      }
+      #fw-canvas { display: block; width: 100vw; height: 100vh; cursor: crosshair; }
+
+      /* A slight vignette and warm wash, which is most of the mood. */
+      .fw-grade {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background:
+          radial-gradient(ellipse at 50% 55%, rgba(0, 0, 0, 0) 42%, rgba(24, 8, 12, 0.55) 100%),
+          linear-gradient(180deg, rgba(255, 140, 70, 0.06), rgba(40, 12, 30, 0.12));
+      }
+
+      .fw-hud { position: fixed; pointer-events: none; z-index: 3; }
+
+      #fw-prompt {
+        left: 50%;
+        bottom: 22vh;
+        transform: translate(-50%, 8px);
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        font-size: 0.82rem;
+        padding: 0.5rem 0.95rem;
+        border: 1px solid rgba(246, 227, 207, 0.28);
+        border-radius: 2px;
+        background: rgba(20, 10, 14, 0.4);
+        opacity: 0;
+        transition: opacity 220ms ease, transform 220ms ease;
+      }
+      #fw-prompt.is-on { opacity: 1; transform: translate(-50%, 0); }
+
+      #fw-compass {
+        top: 26px;
+        left: 50%;
+        transform: translateX(-50%);
+        text-align: center;
+        letter-spacing: 0.3em;
+      }
+      #fw-compass .fw-rule {
+        width: 220px;
+        height: 1px;
+        margin: 8px auto 0;
+        background: linear-gradient(90deg, transparent, rgba(246, 227, 207, 0.5), transparent);
+      }
+      #fw-bearing { font-size: 1.5rem; }
+      #fw-sighted {
+        display: block;
+        margin-top: 8px;
+        font-size: 0.68rem;
+        letter-spacing: 0.22em;
+        color: var(--ember);
+        min-height: 1em;
+      }
+
+      #fw-radio {
+        left: 34px;
+        bottom: 34px;
+        max-width: min(38rem, 52vw);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .fw-line {
+        margin: 0;
+        font-size: 1rem;
+        line-height: 1.45;
+        opacity: 0;
+        transform: translateY(6px);
+        transition: opacity 420ms ease, transform 420ms ease;
+        text-shadow: 0 2px 12px rgba(0, 0, 0, 0.7);
+      }
+      .fw-line.is-in { opacity: 1; transform: none; }
+      .fw-line span {
+        display: block;
+        font-size: 0.64rem;
+        letter-spacing: 0.26em;
+        text-transform: uppercase;
+        color: var(--ember);
+        margin-bottom: 3px;
+      }
+
+      #fw-hint {
+        right: 28px;
+        bottom: 28px;
+        text-align: right;
+        font-size: 0.68rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--dim);
+        line-height: 1.9;
+        transition: opacity 400ms ease;
+      }
+      #fw-hint.is-dim { opacity: 0; }
+      #fw-hint b { color: var(--ink); font-weight: 500; }
+
+      /* The title card, which is also the click-to-lock target. */
+      #fw-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 5;
+        display: grid;
+        place-content: center;
+        text-align: center;
+        gap: 1.1rem;
+        padding: 2rem;
+        background:
+          radial-gradient(ellipse at 50% 60%, rgba(224, 131, 72, 0.16), transparent 60%),
+          rgba(20, 10, 14, 0.82);
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 500ms ease, visibility 500ms;
+        pointer-events: none;
+      }
+      #fw-overlay.is-open { opacity: 1; visibility: visible; }
+      #fw-overlay h1 {
+        margin: 0;
+        font-size: clamp(2.6rem, 9vw, 5.4rem);
+        letter-spacing: 0.3em;
+        text-indent: 0.3em;
+        font-weight: 500;
+        color: #ffd9a8;
+        text-shadow: 0 0 40px rgba(224, 131, 72, 0.45);
+      }
+      #fw-overlay p { margin: 0; color: var(--dim); letter-spacing: 0.08em; }
+      #fw-overlay .fw-go {
+        margin-top: 0.6rem;
+        font-size: 0.76rem;
+        letter-spacing: 0.28em;
+        text-transform: uppercase;
+        color: var(--ember);
+        animation: fw-pulse 2.6s ease-in-out infinite;
+      }
+      @keyframes fw-pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+      @media (prefers-reduced-motion: reduce) {
+        #fw-overlay .fw-go { animation: none; opacity: 0.9; }
+      }
+
+      #fw-fallback {
+        position: fixed;
+        inset: 0;
+        z-index: 9;
+        display: grid;
+        place-content: center;
+        text-align: center;
+        padding: 2rem;
+        background: #1b1116;
+        font-family: Georgia, 'Times New Roman', serif;
+        line-height: 1.6;
+      }
+      #fw-fallback h1 { letter-spacing: 0.2em; font-family: var(--face); font-weight: 500; }
+      #fw-fallback p { color: var(--dim); max-width: 34rem; }
+
+      @media (max-width: 720px) {
+        #fw-radio { left: 18px; bottom: 20px; max-width: 76vw; }
+        #fw-hint { display: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="fw-canvas"></canvas>
+    <div class="fw-grade"></div>
+
+    <div id="fw-compass" class="fw-hud" hidden>
+      <span id="fw-bearing">000°</span>
+      <div class="fw-rule"></div>
+      <span id="fw-sighted"></span>
+    </div>
+
+    <div id="fw-prompt" class="fw-hud"></div>
+    <div id="fw-radio" class="fw-hud" aria-live="polite"></div>
+
+    <div id="fw-hint" class="fw-hud is-dim">
+      <div><b>W A S D</b> walk · <b>Shift</b> run</div>
+      <div><b>Mouse</b> look · <b>E</b> climb</div>
+      <div><b>R</b> radio · <b>Esc</b> let go</div>
+    </div>
+
+    <div id="fw-overlay" class="is-open">
+      <h1>Fire Watch</h1>
+      <p>Dusk in the pines. There is a ladder up the big fir, and something on the north ridge.</p>
+      <p class="fw-go">Click to look around</p>
+    </div>
+
+    <div id="fw-fallback" hidden>
+      <h1>Fire Watch</h1>
+      <p data-reason>This demo needs WebGL, and the browser could not give it one.</p>
+    </div>
+
+    <noscript>
+      <div style="padding: 2rem; font-family: Georgia, serif">
+        <h1>Fire Watch</h1>
+        <p>This demo draws its forest in the browser. It needs JavaScript enabled.</p>
+      </div>
+    </noscript>
+
+    <script type="module" src="/src/firewatch/main.ts"></script>
+  </body>
+</html>
