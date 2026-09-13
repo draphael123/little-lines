@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { fbm, hash2, randoms } from './noise'
 import {
+  ARRIVAL,
   CLEARING,
   CLIMB_SECONDS,
+  SMOKE,
   DECK,
   EYE,
   LADDER_STAND,
@@ -125,7 +127,10 @@ describe('the ladder', () => {
     const top = climbPose(1, 0, Math.PI)
     expect(top.y).toBeCloseTo(DECK.y + EYE, 5)
     expect(top.z).toBeLessThan(LADDER_STAND.z)
-    expect(top.yaw).toBeCloseTo(0, 5)
+    // You step off beside the ladder, turned onto the smoke's bearing.
+    expect(top.x).toBeCloseTo(ARRIVAL.x, 5)
+    expect(atLadderHead(top.x, top.z)).toBe(true)
+    expect(bearingOf(top.yaw)).toBeCloseTo(SMOKE.bearing, 5)
   })
 })
 

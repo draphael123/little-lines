@@ -176,7 +176,7 @@ function start(surface: HTMLCanvasElement) {
 
   // A hook for driving the demo from a test harness. Opt in with ?debug, so
   // an ordinary visit has nothing hanging off the window object.
-  const debug = { camera, player, scene, renderer, paused: false }
+  const debug = { camera, player, scene, renderer, world, paused: false }
   if (new URLSearchParams(window.location.search).has('debug')) {
     ;(window as unknown as Record<string, unknown>).__fw = debug
   }
@@ -194,7 +194,7 @@ function start(surface: HTMLCanvasElement) {
       return
     }
     player.update(dt)
-    world.update(elapsed, dt)
+    world.update(elapsed, dt, camera.position)
 
     const onDeck = player.stance === 'deck'
     const bearing = bearingOf(player.facing)

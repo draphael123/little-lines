@@ -52,6 +52,23 @@ export const CLEARING = 13
 /** How far you can wander before the wood turns you back. */
 export const WANDER = 132
 
+/**
+ * The handful of places worth walking to. Nothing grows on top of them, and
+ * both the props and the things that live on them read their positions here.
+ */
+export const LANDMARKS = {
+  snag: { x: 27, z: -19, clear: 7 },
+  stones: { x: 72, z: -44, clear: 13 },
+  ruin: { x: -36, z: -56, clear: 11 },
+  camp: { x: 11.5, z: 13.5, clear: 5 },
+  cart: { x: -62, z: 78, clear: 6 },
+  signpost: { x: 2.5, z: 84, clear: 3 },
+}
+
+/** The pond in the hollow west of the tower, and the town's name. */
+export const POND = { x: -54, z: 24, radius: 13.5, depth: 2.2 }
+export const TOWN_NAME = 'Ashvale'
+
 /** The wagon road that passes south of the wood, and the town it runs to. */
 export const ROAD = { halfWidth: 3.4, clear: 8.5, from: -340, to: 340 }
 export const TOWN = { bearing: 249, distance: 395 }
@@ -89,6 +106,11 @@ export function distanceToRoad(x: number, z: number): number {
   return Math.sqrt(best)
 }
 
+/** The corridor of the trail, which nothing grows in. */
+export function onTrail(x: number, z: number): boolean {
+  return Math.abs(x) < 4.2 && z > CLEARING - 4 && z < 76
+}
+
 /* ----------------------------------------------------------------- ground */
 
 /**
@@ -96,13 +118,28 @@ export function distanceToRoad(x: number, z: number): number {
  * tree so the ladder always meets the ground it is drawn standing on.
  */
 export function groundAt(x: number, z: number): number {
-  const broad = fbm(x * 0.006, z * 0.006, 4, 11) * 9
+  const broad = fbm(x * 0.006, z * 0.006, 4, 11) * 13
   const fine = fbm(x * 0.045, z * 0.045, 3, 29) * 0.7
   const height = broad + fine
   const r = Math.hypot(x - TRUNK.x, z - TRUNK.z)
   // A level apron under the clearing, easing back into the country outside it.
   const flatten = Math.min(1, Math.max(0, (r - CLEARING * 0.6) / (CLEARING * 1.6)))
-  return height * flatten * flatten
+
+  // The hollow the pond sits in, scooped out of whatever the land was doing.
+  const toPond = Math.hypot(x - POND.x, z - POND.z) / POND.radius
+  const bowl = Math.max(0, 1 - toPond * toPond)
+
+  return height * flatten * flatten - bowl * bowl * POND.depth
+}
+
+/** How high the water stands. Everything below this line is in the pond. */
+export function waterLevel(): number {
+  return groundAt(POND.x, POND.z) + POND.depth * 0.74
+}
+
+/** True in the water, or close enough to it that nothing dry grows there. */
+export function inPond(x: number, z: number, margin = 0): boolean {
+  return Math.hypot(x - POND.x, z - POND.z) < POND.radius * 0.82 + margin
 }
 
 /* ------------------------------------------------------------------ trees */
@@ -125,7 +162,7 @@ export interface Tree {
  * thickets and open aisles rather than an even sprinkle, and nothing grows
  * in the clearing or on the trail up to it.
  */
-export function scatterWood(radius = 260, spacing = 7.5, seed = 7): Tree[] {
+export function scatterWood(radius = 260, spacing = 6.2, seed = 7): Tree[] {
   const random = randoms(seed)
   const trees: Tree[] = []
   for (let gx = -radius; gx <= radius; gx += spacing) {
@@ -140,12 +177,18 @@ export function scatterWood(radius = 260, spacing = 7.5, seed = 7): Tree[] {
       if (open < random()) continue
 
       // The trail in from the south: a thin corridor kept clear.
-      if (Math.abs(x) < 4.2 && z > CLEARING - 4 && z < 76) continue
+      if (onTrail(x, z)) continue
 
       // Nothing grows in the road, and the verge is kept back off it.
       if (distanceToRoad(x, z) < ROAD.clear) continue
 
-      const density = fbm(x * 0.011, z * 0.011, 3, 5) * 0.5 + 0.62
+      // Nor in the pond, though the wood comes right down to the water.
+      if (inPond(x, z, 1.5)) continue
+
+      // Nor on top of anything anybody built or left behind.
+      if (Object.values(LANDMARKS).some((at) => Math.hypot(x - at.x, z - at.z) < at.clear)) continue
+
+      const density = fbm(x * 0.011, z * 0.011, 3, 5) * 0.5 + 0.74
       if (random() > density) continue
 
       const big = random()
@@ -179,8 +222,15 @@ export interface Climb {
 /** Where you stand to take hold of the ladder. */
 export const LADDER_STAND = { x: 0, z: LADDER.z + 0.72 }
 
-/** Where you step off, once you are up. */
+/** The head of the ladder, where you can take it back down. */
 export const DECK_STAND = { x: 0, z: DECK.maxZ - 0.9 }
+
+/**
+ * Where the climb actually puts you: a step to one side of the ladder, clear
+ * of the trunk, facing the quarter the smoke is in. Arriving nose-first into
+ * three feet of bark is a poor reward for a long climb.
+ */
+export const ARRIVAL = { x: 1.45, z: DECK.maxZ - 1.5 }
 
 /** Close enough to the foot of the ladder to reach it. */
 export function atLadderFoot(x: number, z: number): boolean {
@@ -189,7 +239,7 @@ export function atLadderFoot(x: number, z: number): boolean {
 
 /** Standing over the head of the ladder, on the deck. */
 export function atLadderHead(x: number, z: number): boolean {
-  return Math.hypot(x - DECK_STAND.x, z - DECK_STAND.z) < 1.7
+  return Math.hypot(x - DECK_STAND.x, z - DECK_STAND.z) < 2.2
 }
 
 /** Seconds end to end. Slow enough to feel like a climb, short enough to allow. */
@@ -231,11 +281,15 @@ export function climbPose(t: number, groundY: number, fromYaw: number): ClimbPos
   const stepOff = ease(Math.min(1, Math.max(0, (t - 0.88) / 0.12)))
 
   const y = mix(groundY + EYE, DECK.y + EYE, rise)
-  const z = mix(LADDER_STAND.z, DECK_STAND.z, stepOff)
+  const x = mix(LADDER_STAND.x, ARRIVAL.x, stepOff)
+  const z = mix(LADDER_STAND.z, ARRIVAL.z, stepOff)
   const sway = Math.sin(rise * 26) * 0.07 * (1 - stepOff)
-  const yaw = mix(fromYaw, 0, holdOn)
+  // Facing the trunk all the way up, then turning onto the smoke as you step
+  // off, which is the first thing a lookout would look for.
+  const onto = -(SMOKE.bearing * Math.PI) / 180
+  const yaw = mix(mix(fromYaw, 0, holdOn), onto, stepOff)
 
-  return { x: LADDER_STAND.x + sway, y, z, yaw }
+  return { x: x + sway, y, z, yaw }
 }
 
 /**

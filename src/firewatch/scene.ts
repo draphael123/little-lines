@@ -8,6 +8,7 @@
  */
 import * as THREE from 'three'
 import { fbm, randoms } from './noise'
+import type { Tree } from './lookout'
 import {
   CLEARING,
   ROAD,
@@ -16,11 +17,15 @@ import {
   bearingToPoint,
   distanceToRoad,
   groundAt,
+  inPond,
+  onTrail,
   roadPoint,
   scatterWood,
 } from './lookout'
+import { buildProps } from './props'
 import { buildTower } from './tower'
 import { buildTown } from './town'
+import { buildWildlife } from './wildlife'
 
 /* ---------------------------------------------------------------- palette */
 
@@ -31,8 +36,8 @@ export const PALETTE = {
   coolHorizon: '#6b4a76',
   sunGlow: '#ffd79a',
   fog: '#835650',
-  ground: '#7f8451',
-  groundWarm: '#94794e',
+  ground: '#98a16a',
+  groundWarm: '#b0a071',
   trail: '#a98d68',
   bark: '#4e392b',
   needles: '#3f6150',
@@ -58,6 +63,9 @@ const colour = (hex: string) => new THREE.Color(hex)
 
 /** One clock, shared by everything that sways. */
 const wind = { value: 0 }
+
+/** Where the player's eye is, so the undergrowth can get out of the way. */
+const eye = { value: new THREE.Vector3(0, 2, 40) }
 
 /* -------------------------------------------------------------------- sky */
 
@@ -168,6 +176,109 @@ function buildRidges(): THREE.Group {
 
 /* ----------------------------------------------------------------- ground */
 
+/**
+ * The forest floor itself. A hundred thousand little meshes will never carpet
+ * four hundred metres of ground, so the litter is a tiled texture and the
+ * planting sits on top of it.
+ */
+function litterTexture(): THREE.Texture {
+  const canvas = document.createElement('canvas')
+  const size = 512
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  if (ctx) {
+    // Base: dry needle brown, mottled rather than flat.
+    ctx.fillStyle = '#a2966d'
+    ctx.fillRect(0, 0, size, size)
+    for (let i = 0; i < 240; i++) {
+      const x = Math.random() * size
+      const y = Math.random() * size
+      const r = 12 + Math.random() * 60
+      ctx.fillStyle =
+        Math.random() > 0.5
+          ? `rgba(150, 133, 92, ${0.12 + Math.random() * 0.2})`
+          : `rgba(196, 184, 138, ${0.1 + Math.random() * 0.18})`
+      ctx.beginPath()
+      ctx.ellipse(x, y, r, r * (0.6 + Math.random() * 0.6), Math.random() * 3, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    // Moss, in ragged patches rather than round blobs.
+    for (let i = 0; i < 90; i++) {
+      const cx = Math.random() * size
+      const cy = Math.random() * size
+      const green = 104 + Math.random() * 62
+      ctx.fillStyle = `rgba(${Math.round(green * 0.52)}, ${Math.round(green)}, ${Math.round(green * 0.44)}, 0.5)`
+      ctx.beginPath()
+      const lobes = 9
+      for (let l = 0; l <= lobes; l++) {
+        const a = (l / lobes) * Math.PI * 2
+        const r = (10 + Math.random() * 26) * (0.7 + Math.sin(a * 3 + i) * 0.3)
+        const x = cx + Math.cos(a) * r
+        const y = cy + Math.sin(a) * r * 0.8
+        if (l === 0) ctx.moveTo(x, y)
+        else ctx.lineTo(x, y)
+      }
+      ctx.closePath()
+      ctx.fill()
+    }
+
+    // Needles: thousands of them, short and lying every which way.
+    for (let i = 0; i < 9000; i++) {
+      const x = Math.random() * size
+      const y = Math.random() * size
+      const angle = Math.random() * Math.PI
+      const length = 4 + Math.random() * 12
+      const shade = 60 + Math.random() * 90
+      const rust = Math.random() * 0.4
+      ctx.strokeStyle = `rgba(${Math.round(shade * (1 + rust))}, ${Math.round(shade * 0.78)}, ${Math.round(shade * 0.44)}, ${0.35 + Math.random() * 0.45})`
+      ctx.lineWidth = 0.8 + Math.random() * 0.9
+      ctx.beginPath()
+      ctx.moveTo(x, y)
+      ctx.lineTo(x + Math.cos(angle) * length, y + Math.sin(angle) * length)
+      ctx.stroke()
+    }
+
+    // Twigs, pebbles and the odd fallen leaf, for something to find at your feet.
+    for (let i = 0; i < 150; i++) {
+      const x = Math.random() * size
+      const y = Math.random() * size
+      const kind = Math.random()
+      if (kind < 0.4) {
+        ctx.strokeStyle = 'rgba(78, 60, 42, 0.75)'
+        ctx.lineWidth = 1.4 + Math.random() * 1.8
+        const angle = Math.random() * Math.PI
+        const length = 10 + Math.random() * 26
+        ctx.beginPath()
+        ctx.moveTo(x, y)
+        ctx.lineTo(x + Math.cos(angle) * length, y + Math.sin(angle) * length)
+        ctx.stroke()
+      } else if (kind < 0.72) {
+        const grey = 128 + Math.random() * 70
+        ctx.fillStyle = `rgba(${grey}, ${Math.round(grey * 0.97)}, ${Math.round(grey * 0.86)}, 0.85)`
+        ctx.beginPath()
+        ctx.ellipse(x, y, 2 + Math.random() * 4, 1.6 + Math.random() * 3, Math.random() * 3, 0, Math.PI * 2)
+        ctx.fill()
+      } else {
+        ctx.fillStyle = `rgba(${150 + Math.random() * 60}, ${90 + Math.random() * 50}, 48, 0.7)`
+        ctx.beginPath()
+        ctx.ellipse(x, y, 3 + Math.random() * 4, 2 + Math.random() * 3, Math.random() * 3, 0, Math.PI * 2)
+        ctx.fill()
+      }
+    }
+  }
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.wrapS = THREE.RepeatWrapping
+  texture.wrapT = THREE.RepeatWrapping
+  // Two and a half metres a tile: close enough to see needles, far enough
+  // that the tiling never announces itself.
+  texture.repeat.set(250, 250)
+  texture.anisotropy = 8
+  return texture
+}
+
 function buildGround(): THREE.Mesh {
   const size = 620
   const segments = 150
@@ -188,9 +299,9 @@ function buildGround(): THREE.Mesh {
     const patch = fbm(x * 0.08, z * 0.08, 2, 3) * 0.5 + 0.5
     shade.copy(moss).lerp(warm, patch * 0.5)
 
-    // Bare earth shows through in the clearing, where the needles get walked off.
-    const bare = Math.max(0, 1 - Math.hypot(x, z) / 22)
-    shade.lerp(trail, bare * 0.35)
+    // Bare earth shows through right under the tower, where it gets walked off.
+    const bare = Math.max(0, 1 - Math.hypot(x, z) / 15)
+    shade.lerp(trail, bare * 0.22)
 
     // It darkens away from the clearing, where the canopy closes over.
     const closed = Math.min(1, Math.hypot(x, z) / 130)
@@ -204,7 +315,11 @@ function buildGround(): THREE.Mesh {
 
   const mesh = new THREE.Mesh(
     geometry,
-    new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }),
+    new THREE.MeshLambertMaterial({
+      vertexColors: true,
+      map: litterTexture(),
+      flatShading: true,
+    }),
   )
   mesh.receiveShadow = false
   return mesh
@@ -374,6 +489,8 @@ function buildRoad(): THREE.Mesh {
 
 /* ------------------------------------------------------------------- wood */
 
+/* ----------------------------------------------------------------- species */
+
 /**
  * Everything is drawn in one pass per kind of thing, so the parts of a tree
  * have to become a single geometry first. Three's merge helper lives in the
@@ -403,23 +520,105 @@ function merge(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
 }
 
 /**
- * One stylised conifer, a unit high and a unit across: three skirts over a
- * bare stem, which is as much tree as a silhouette at dusk ever needs.
+ * A fir: broad skirts over a bare stem, a unit high and a unit across. The
+ * silhouette does nearly all the work at dusk, so the species differ in
+ * outline rather than in detail.
  */
-function coniferGeometry(): THREE.BufferGeometry {
+function firGeometry(): THREE.BufferGeometry {
   const tiers = [
-    { y: 0.3, r: 0.5, h: 0.34 },
-    { y: 0.52, r: 0.4, h: 0.3 },
-    { y: 0.72, r: 0.27, h: 0.28 },
+    { y: 0.28, r: 0.5, h: 0.36 },
+    { y: 0.5, r: 0.41, h: 0.32 },
+    { y: 0.71, r: 0.28, h: 0.3 },
   ]
   const parts: THREE.BufferGeometry[] = tiers.map((tier) => {
     const cone = new THREE.ConeGeometry(tier.r, tier.h, 6)
     cone.translate(0, tier.y + tier.h / 2, 0)
     return cone
   })
-  const stem = new THREE.CylinderGeometry(0.035, 0.055, 0.34, 5)
-  stem.translate(0, 0.17, 0)
+  const stem = new THREE.CylinderGeometry(0.035, 0.055, 0.32, 5)
+  stem.translate(0, 0.16, 0)
   parts.push(stem)
+  return merge(parts)
+}
+
+/** A spruce: narrower, taller, five tight tiers nearly to the ground. */
+function spruceGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = []
+  for (let i = 0; i < 5; i++) {
+    const t = i / 5
+    const cone = new THREE.ConeGeometry(0.36 - t * 0.22, 0.3 - t * 0.08, 6)
+    cone.translate(0, 0.18 + t * 0.68 + (0.3 - t * 0.08) / 2, 0)
+    parts.push(cone)
+  }
+  const stem = new THREE.CylinderGeometry(0.028, 0.045, 0.24, 5)
+  stem.translate(0, 0.12, 0)
+  parts.push(stem)
+  return merge(parts)
+}
+
+/** A pine: a long clean bole with the crown all at the top. */
+function pineGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = []
+  const stem = new THREE.CylinderGeometry(0.038, 0.07, 0.72, 6)
+  stem.translate(0, 0.36, 0)
+  parts.push(stem)
+  const crowns: Array<[number, number, number, number, number]> = [
+    [0, 0.78, 0, 0.34, 0.26],
+    [-0.14, 0.86, 0.08, 0.24, 0.2],
+    [0.15, 0.88, -0.06, 0.22, 0.18],
+  ]
+  crowns.forEach(([x, y, z, r, h]) => {
+    const cap = new THREE.ConeGeometry(r, h, 6)
+    cap.translate(x, y + h / 2, z)
+    parts.push(cap)
+  })
+  return merge(parts)
+}
+
+/**
+ * A broadleaf: a tapering trunk that forks, with the crown built from a
+ * handful of small masses rather than one big one — a single blob at this
+ * scale reads as a boulder in a tree's place.
+ */
+function broadleafGeometry(slim: boolean): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = []
+  const boleTop = slim ? 0.62 : 0.44
+  const bole = new THREE.CylinderGeometry(slim ? 0.028 : 0.045, slim ? 0.05 : 0.085, boleTop, 7)
+  bole.translate(0, boleTop / 2, 0)
+  parts.push(bole)
+
+  const forks = slim ? 2 : 3
+  for (let i = 0; i < forks; i++) {
+    const angle = (i / forks) * Math.PI * 2 + 0.4
+    const limb = new THREE.CylinderGeometry(0.02, 0.035, 0.3, 5)
+    limb.rotateZ(Math.cos(angle) * 0.6)
+    limb.rotateX(Math.sin(angle) * 0.6)
+    limb.translate(Math.cos(angle) * 0.07, boleTop + 0.1, Math.sin(angle) * 0.07)
+    parts.push(limb)
+  }
+
+  const masses = slim
+    ? [
+        [0, 0.82, 0, 0.16],
+        [-0.09, 0.9, 0.05, 0.12],
+        [0.08, 0.93, -0.04, 0.11],
+        [0.02, 1.0, 0.03, 0.09],
+      ]
+    : [
+        [0, 0.66, 0, 0.24],
+        [-0.2, 0.72, 0.12, 0.18],
+        [0.21, 0.7, -0.1, 0.19],
+        [0.05, 0.84, 0.16, 0.16],
+        [-0.11, 0.86, -0.14, 0.15],
+        [0.02, 0.94, 0, 0.13],
+      ]
+  masses.forEach(([x, y, z, r]) => {
+    const mass = new THREE.IcosahedronGeometry(r, 0)
+    mass.scale(1.15, 0.85, 1.15)
+    mass.rotateY(x * 9 + z * 5)
+    mass.translate(x, y, z)
+    parts.push(mass)
+  })
   return merge(parts)
 }
 
@@ -427,71 +626,205 @@ function buildWood(): { group: THREE.Group; count: number } {
   const trees = scatterWood()
   const group = new THREE.Group()
 
-  const canopy = new THREE.InstancedMesh(
-    coniferGeometry(),
-    new THREE.MeshLambertMaterial({ flatShading: true }),
-    trees.length,
-  )
+  // Four species, chosen by the tree's own tint so the same seed always gives
+  // the same wood: firs and spruces make up the body of it, pines stand over
+  // them, and the broadleaves and birches break up the skyline.
+  const kinds = [
+    {
+      of: (t: Tree) => t.tint < 0.34,
+      geometry: firGeometry(),
+      tall: 1,
+      wide: 2.0,
+      // Fir: blue-green through to a tired olive.
+      coats: ['#2e4b3d', '#39584180', '#42664a', '#54703f', '#2a4438'],
+    },
+    {
+      of: (t: Tree) => t.tint < 0.62,
+      geometry: spruceGeometry(),
+      tall: 1.18,
+      wide: 1.55,
+      coats: ['#24403a', '#2f4d3f', '#3a5a44', '#45613c', '#1f3833'],
+    },
+    {
+      of: (t: Tree) => t.tint < 0.75,
+      geometry: pineGeometry(),
+      tall: 1.25,
+      wide: 1.8,
+      coats: ['#3c5540', '#4a6640', '#5b7040', '#6a7a44'],
+    },
+    {
+      of: (t: Tree) => t.tint < 0.9,
+      geometry: broadleafGeometry(false),
+      tall: 0.72,
+      wide: 2.1,
+      // Broadleaf: half of them have turned, which is most of the colour in
+      // the wood at this time of year.
+      coats: ['#6d8a3c', '#89903a', '#b08a33', '#a8632c', '#8f5a30', '#5f7c38'],
+    },
+    {
+      of: () => true,
+      geometry: broadleafGeometry(true),
+      tall: 0.95,
+      wide: 1.35,
+      coats: ['#9aa84e', '#c2a94a', '#d2b455', '#b8903c', '#87984a'],
+    },
+  ]
 
   const matrix = new THREE.Matrix4()
   const quaternion = new THREE.Quaternion()
   const position = new THREE.Vector3()
   const scale = new THREE.Vector3()
-  const needles = colour(PALETTE.needles)
-  const olive = colour(PALETTE.needlesOlive)
+  const axis = new THREE.Vector3(0, 1, 0)
   const tint = new THREE.Color()
 
-  trees.forEach((tree, i) => {
-    quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), tree.spin)
+  kinds.forEach((kind, index) => {
+    const mine = trees.filter(
+      (tree) => kind.of(tree) && !kinds.slice(0, index).some((earlier) => earlier.of(tree)),
+    )
+    if (mine.length === 0) return
 
-    position.set(tree.x, tree.y, tree.z)
-    scale.set(tree.spread * 2, tree.height, tree.spread * 2)
-    matrix.compose(position, quaternion, scale)
-    canopy.setMatrixAt(i, matrix)
-    tint.copy(needles).lerp(olive, tree.tint * 0.9)
-    tint.multiplyScalar(0.82 + tree.tint * 0.35)
-    canopy.setColorAt(i, tint)
+    const mesh = new THREE.InstancedMesh(
+      kind.geometry,
+      new THREE.MeshLambertMaterial({ flatShading: true }),
+      mine.length,
+    )
+    const coats = kind.coats.map((hex) => colour(hex.slice(0, 7)))
+
+    mine.forEach((tree, i) => {
+      quaternion.setFromAxisAngle(axis, tree.spin)
+      position.set(tree.x, tree.y, tree.z)
+      const width = tree.spread * kind.wide
+      scale.set(width, tree.height * kind.tall, width)
+      matrix.compose(position, quaternion, scale)
+      mesh.setMatrixAt(i, matrix)
+      // Two sources of variation: a slow noise across the map, so a stand of
+      // trees shares a colour the way a real one does, and the tree's own
+      // place in its species' range on top of that.
+      const stand = fbm(tree.x * 0.018, tree.z * 0.018, 2, index * 31 + 3) * 0.5 + 0.5
+      const pick = Math.min(coats.length - 1, Math.floor((stand * 0.7 + tree.tint * 0.3) * coats.length))
+      tint.copy(coats[pick]).lerp(coats[(pick + 1) % coats.length], (tree.spin % 1) * 0.45)
+      tint.multiplyScalar(0.82 + stand * 0.3)
+      mesh.setColorAt(i, tint)
+    })
+
+    mesh.instanceMatrix.needsUpdate = true
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+    group.add(mesh)
   })
 
-  canopy.instanceMatrix.needsUpdate = true
-  if (canopy.instanceColor) canopy.instanceColor.needsUpdate = true
-  group.add(canopy)
-
-  group.add(buildGrass())
+  group.add(buildUnderstory())
 
   return { group, count: trees.length }
 }
 
-/* ------------------------------------------------------------------ grass */
+/* ------------------------------------------------------------- understory */
 
-/** One clump of blades, drawn once into a texture and cut out with alpha. */
-function grassTexture(): THREE.Texture {
+/**
+ * A clump of blades drawn once into a texture and cut out with alpha. Two of
+ * them: one tall and thin for the tufts you wade through, one short and wide
+ * for the mat underneath. Everything else about the floor is instanced on top
+ * of those two.
+ */
+function grassTexture(tall: boolean, kind: number): THREE.Texture {
+  // Four believable kinds: fresh green, olive, sun-bleached straw, and the
+  // rust that comes in wherever the ground is poor.
+  const hues: Array<[number, number, number]> = [
+    [0.62, 1.0, 0.42],
+    [0.78, 0.94, 0.36],
+    [0.94, 0.88, 0.46],
+    [1.0, 0.72, 0.36],
+  ]
+  const [redward, greenward, blueward] = hues[kind % hues.length]
+
   const canvas = document.createElement('canvas')
-  canvas.width = 128
-  canvas.height = 128
+  const size = 256
+  canvas.width = size
+  canvas.height = size
   const ctx = canvas.getContext('2d')
   if (ctx) {
-    ctx.clearRect(0, 0, 128, 128)
-    const blades = 11
+    ctx.clearRect(0, 0, size, size)
+    // Flat facets, like everything else in the wood: each blade is two or
+    // three straight-sided shapes in one tone, not a painted gradient.
+    const blades = tall ? 9 : 13
     for (let i = 0; i < blades; i++) {
-      const root = 12 + (i / blades) * 104 + Math.random() * 6
-      const height = 52 + Math.random() * 66
-      const lean = (Math.random() - 0.5) * 46
-      const width = 3 + Math.random() * 3.4
-      const green = 120 + Math.random() * 66
-      ctx.fillStyle = `rgb(${Math.round(green * 0.62)}, ${Math.round(green)}, ${Math.round(green * 0.42)})`
+      const root = 14 + (i / blades) * (size - 28) + Math.random() * 12
+      const height = (tall ? 0.56 : 0.3) * size + Math.random() * size * (tall ? 0.4 : 0.26)
+      const lean = (Math.random() - 0.5) * (tall ? 70 : 96)
+      const width = (tall ? 11 : 13) + Math.random() * 9
+      const value = 108 + Math.random() * 76
+      const level = 0.78 + Math.random() * 0.34
+      const flat = (shade: number) =>
+        `rgb(${Math.round(value * redward * shade)}, ${Math.round(value * greenward * shade)}, ${Math.round(value * blueward * shade)})`
+
+      // The blade: a straight taper with one kink, drawn as two facets so the
+      // lit side and the shaded side read separately.
+      const midY = size - height * 0.55
+      const midX = root + lean * 0.45
+      const tipX = root + lean
+      const tipY = size - height
+      ctx.fillStyle = flat(level)
       ctx.beginPath()
-      ctx.moveTo(root - width / 2, 128)
-      ctx.quadraticCurveTo(root - width * 0.2 + lean * 0.4, 128 - height * 0.6, root + lean, 128 - height)
-      ctx.quadraticCurveTo(root + width * 0.8 + lean * 0.4, 128 - height * 0.6, root + width / 2, 128)
+      ctx.moveTo(root - width / 2, size)
+      ctx.lineTo(midX - width * 0.28, midY)
+      ctx.lineTo(tipX, tipY)
+      ctx.lineTo(midX + width * 0.1, midY)
+      ctx.lineTo(root, size)
       ctx.closePath()
       ctx.fill()
-      // A lighter edge down one side of each blade catches the last light.
-      ctx.strokeStyle = `rgba(${Math.round(green * 0.9)}, ${Math.round(green * 1.25)}, ${Math.round(green * 0.6)}, 0.75)`
-      ctx.lineWidth = 1
+
+      ctx.fillStyle = flat(level * 0.72)
       ctx.beginPath()
-      ctx.moveTo(root, 128)
-      ctx.quadraticCurveTo(root + lean * 0.4, 128 - height * 0.6, root + lean, 128 - height)
+      ctx.moveTo(root, size)
+      ctx.lineTo(midX + width * 0.1, midY)
+      ctx.lineTo(tipX, tipY)
+      ctx.lineTo(midX + width * 0.42, midY)
+      ctx.lineTo(root + width / 2, size)
+      ctx.closePath()
+      ctx.fill()
+    }
+  }
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  return texture
+}
+
+/** A fern frond: a spine with filled leaflets down both sides. */
+function fernTexture(): THREE.Texture {
+  const canvas = document.createElement('canvas')
+  canvas.width = 256
+  canvas.height = 256
+  const ctx = canvas.getContext('2d')
+  if (ctx) {
+    ctx.clearRect(0, 0, 256, 256)
+    for (let f = 0; f < 3; f++) {
+      const baseX = 46 + f * 82 + Math.random() * 12
+      const height = 180 + Math.random() * 56
+      const bend = (Math.random() - 0.5) * 56
+      const value = 118 + Math.random() * 54
+      const leaflets = 9
+      for (let i = 1; i <= leaflets; i++) {
+        const t = i / leaflets
+        const x = baseX + bend * t * t
+        const y = 256 - height * t
+        const span = 40 * Math.sin(Math.PI * Math.min(1, t * 1.1)) + 7
+        const drop = 13 * (1 - t * 0.4)
+        for (const side of [-1, 1]) {
+          // A leaflet is a flat triangle, which is the same language the
+          // trees are drawn in.
+          ctx.fillStyle = `rgb(${Math.round(value * (0.44 + t * 0.14))}, ${Math.round(value * (0.82 + t * 0.24) * (side > 0 ? 1 : 0.8))}, ${Math.round(value * 0.4)})`
+          ctx.beginPath()
+          ctx.moveTo(x, y + drop * 0.3)
+          ctx.lineTo(x + side * span, y - drop * 0.2)
+          ctx.lineTo(x, y - drop)
+          ctx.closePath()
+          ctx.fill()
+        }
+      }
+      ctx.strokeStyle = `rgb(${Math.round(value * 0.46)}, ${Math.round(value * 0.74)}, ${Math.round(value * 0.36)})`
+      ctx.lineWidth = 4
+      ctx.beginPath()
+      ctx.moveTo(baseX, 256)
+      ctx.quadraticCurveTo(baseX + bend * 0.4, 256 - height * 0.6, baseX + bend, 256 - height)
       ctx.stroke()
     }
   }
@@ -500,83 +833,288 @@ function grassTexture(): THREE.Texture {
   return texture
 }
 
-/** Three quads crossed through each other: a tuft from any angle. */
-function tuftGeometry(): THREE.BufferGeometry {
+/** Crossed quads: a tuft that holds up from any angle. */
+function tuftGeometry(blades: number): THREE.BufferGeometry {
   const quads: THREE.BufferGeometry[] = []
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < blades; i++) {
     const quad = new THREE.PlaneGeometry(1, 1)
     quad.translate(0, 0.5, 0)
-    quad.rotateY((i / 3) * Math.PI)
+    quad.rotateY((i / blades) * Math.PI)
     quads.push(quad)
   }
   return merge(quads)
 }
 
-/**
- * Grass, in the clearing and along the road where the light gets in. It is
- * alpha-cut rather than transparent, so it needs no sorting, and it leans in
- * the wind from the vertex shader rather than from the CPU.
- */
-function buildGrass(): THREE.InstancedMesh {
-  const material = new THREE.MeshLambertMaterial({
-    map: grassTexture(),
-    alphaTest: 0.42,
-    side: THREE.DoubleSide,
-    flatShading: false,
-  })
+/** Everything that sways does it off one clock, from the same few lines. */
+function windy(material: THREE.Material, strength: number) {
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = wind
-    shader.vertexShader = `uniform float uTime;\n${shader.vertexShader}`.replace(
+    shader.uniforms.uEye = eye
+    shader.vertexShader = `uniform float uTime;\nuniform vec3 uEye;\n${shader.vertexShader}`.replace(
       '#include <begin_vertex>',
       `#include <begin_vertex>
        vec3 tuft = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
        float gust = sin(uTime * 1.3 + tuft.x * 0.21 + tuft.z * 0.17)
                   + sin(uTime * 2.7 + tuft.x * 0.09) * 0.35;
-       transformed.x += gust * 0.22 * transformed.y;
-       transformed.z += gust * 0.12 * transformed.y;`,
+       transformed.x += gust * ${strength.toFixed(2)} * transformed.y;
+       transformed.z += gust * ${(strength * 0.55).toFixed(2)} * transformed.y;
+       // Anything you are standing on lies down, so a clump never becomes a
+       // green wall across the screen.
+       float trodden = smoothstep(0.25, 1.15, distance(tuft.xz, uEye.xz));
+       transformed *= mix(0.18, 1.0, trodden);`,
     )
   }
+}
 
-  const count = 9000
-  const mesh = new THREE.InstancedMesh(tuftGeometry(), material, count)
-  const matrix = new THREE.Matrix4()
-  const quaternion = new THREE.Quaternion()
-  const position = new THREE.Vector3()
-  const scale = new THREE.Vector3()
-  const axis = new THREE.Vector3(0, 1, 0)
-  const random = randoms(99)
-  const blade = colour('#89995a')
-  const dry = colour('#b4a565')
-  const tint = new THREE.Color()
+interface Clump {
+  x: number
+  z: number
+  /** 0 out under closed canopy, 1 in the open. */
+  light: number
+}
 
-  let placed = 0
+/**
+ * Where the floor plants go. Growth is clumped rather than sprinkled: a few
+ * thousand patches, each with a handful of plants in it, which is the
+ * difference between a lawn and a wood.
+ */
+function clumps(count: number, reach: number, seed: number, everywhere = false): Clump[] {
+  const random = randoms(seed)
+  const out: Clump[] = []
   let guard = 0
-  while (placed < count && guard < count * 8) {
+  while (out.length < count && guard < count * 12) {
     guard++
     const angle = random() * Math.PI * 2
-    const radius = 3 + Math.sqrt(random()) * 120
+    const radius = 2 + Math.sqrt(random()) * reach
     const x = Math.cos(angle) * radius
     const z = Math.sin(angle) * radius
-    // Thickest in the clearing and on the verge, thin under closed canopy.
-    const open = Math.max(0, 1 - Math.abs(radius - CLEARING) / 34)
-    const verge = Math.max(0, 1 - Math.abs(distanceToRoad(x, z) - ROAD.halfWidth - 1.4) / 6)
-    if (random() > 0.16 + open * 0.8 + verge * 0.85) continue
-    if (distanceToRoad(x, z) < ROAD.halfWidth) continue
+    if (inPond(x, z)) continue
+    if (onTrail(x, z)) continue
+    if (distanceToRoad(x, z) < ROAD.halfWidth + 0.3) continue
 
-    quaternion.setFromAxisAngle(axis, random() * Math.PI)
-    position.set(x, groundAt(x, z) - 0.05, z)
-    const s = 0.5 + random() * 0.75
-    scale.set(s, s * (0.8 + random() * 0.9), s)
-    matrix.compose(position, quaternion, scale)
-    mesh.setMatrixAt(placed, matrix)
-    tint.copy(blade).lerp(dry, random() * 0.8)
-    mesh.setColorAt(placed, tint)
-    placed++
+    // Thickest in the clearing and along the verge, where the light gets in.
+    const open = Math.max(0, 1 - Math.abs(radius - CLEARING - 6) / 46)
+    const verge = Math.max(0, 1 - Math.abs(distanceToRoad(x, z) - ROAD.halfWidth - 2) / 7)
+    const patchy = fbm(x * 0.05, z * 0.05, 3, 17) * 0.5 + 0.5
+    const light = Math.min(1, open * 0.75 + verge * 0.8 + patchy * 0.55)
+    // The mat of low stuff grows under closed canopy too; the tall grass and
+    // the ferns are choosier, and thin out where the light does.
+    if (!everywhere && random() > 0.35 + light * 0.65) continue
+    out.push({ x, z, light })
   }
-  mesh.count = placed
-  mesh.instanceMatrix.needsUpdate = true
-  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
-  return mesh
+  return out
+}
+
+/**
+ * The floor of the wood: deep grass you walk through, a mat of shorter stuff
+ * under it, ferns in the shade, saplings coming up and deadfall lying about.
+ *
+ * Everything here is planted into buckets forty metres square rather than one
+ * mesh per kind. One mesh covering the whole wood can never be culled — every
+ * blade behind you is still transformed each frame — and at this density that
+ * is most of the frame's work thrown away.
+ */
+const CELL = 40
+
+interface Planting {
+  x: number
+  z: number
+  height: number
+  width: number
+  spin: number
+  tint: THREE.Color
+}
+
+function bucketOf(
+  buckets: Map<string, Planting[]>,
+  layer: string,
+  kind: number,
+  x: number,
+  z: number,
+): Planting[] {
+  const key = `${layer}:${kind}:${Math.floor(x / CELL)}:${Math.floor(z / CELL)}`
+  let bucket = buckets.get(key)
+  if (!bucket) {
+    bucket = []
+    buckets.set(key, bucket)
+  }
+  return bucket
+}
+
+function plantInto(
+  group: THREE.Group,
+  buckets: Map<string, Planting[]>,
+  layer: string,
+  geometry: (kind: number) => THREE.BufferGeometry,
+  material: (kind: number) => THREE.Material,
+  lift = -0.06,
+) {
+  const matrix = new THREE.Matrix4()
+  const spin = new THREE.Quaternion()
+  const axis = new THREE.Vector3(0, 1, 0)
+  const position = new THREE.Vector3()
+  const scale = new THREE.Vector3()
+
+  for (const [key, plants] of buckets) {
+    if (!key.startsWith(`${layer}:`) || plants.length === 0) continue
+    const kind = Number(key.split(':')[1])
+    const mesh = new THREE.InstancedMesh(geometry(kind), material(kind), plants.length)
+    plants.forEach((plant, i) => {
+      spin.setFromAxisAngle(axis, plant.spin)
+      position.set(plant.x, groundAt(plant.x, plant.z) + lift, plant.z)
+      scale.set(plant.width, plant.height, plant.width)
+      matrix.compose(position, spin, scale)
+      mesh.setMatrixAt(i, matrix)
+      mesh.setColorAt(i, plant.tint)
+    })
+    mesh.instanceMatrix.needsUpdate = true
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+    mesh.computeBoundingSphere()
+    group.add(mesh)
+  }
+}
+
+function buildUnderstory(): THREE.Group {
+  const group = new THREE.Group()
+  const random = randoms(1201)
+  const buckets = new Map<string, Planting[]>()
+  const tint = new THREE.Color()
+
+  const sow = (
+    layer: string,
+    kind: number,
+    clump: Clump,
+    spread: number,
+    height: number,
+    colours: [THREE.Color, THREE.Color],
+  ) => {
+    const x = clump.x + (random() - 0.5) * spread
+    const z = clump.z + (random() - 0.5) * spread
+    tint.copy(colours[0]).lerp(colours[1], random())
+    bucketOf(buckets, layer, kind, x, z).push({
+      x,
+      z,
+      height,
+      width: height * (0.7 + random() * 0.5),
+      spin: random() * Math.PI,
+      tint: tint.clone(),
+    })
+  }
+
+  // Deep grass, in four kinds. A stand keeps to one kind, so the meadow reads
+  // as patches of different growth rather than one mown colour.
+  const deepTints: Array<[THREE.Color, THREE.Color]> = [
+    [colour('#9cb25c'), colour('#7f9a4c')],
+    [colour('#a8b061'), colour('#8d9a4e')],
+    [colour('#c6b46c'), colour('#b0a05c')],
+    [colour('#b9945a'), colour('#9d8a4e')],
+  ]
+  // Weighted towards green: dry grass is the exception, not the rule.
+  const weighted = [0, 0, 0, 1, 1, 0, 2, 1, 0, 3]
+  clumps(2000, 104, 77).forEach((clump, index) => {
+    const roll = fbm(clump.x * 0.03, clump.z * 0.03, 2, 61) * 0.5 + 0.5
+    const kind = weighted[Math.min(9, Math.floor(roll * 9.4 + (index % 3) * 0.2))]
+    const many = 6 + Math.round(random() * 10 * (0.4 + clump.light))
+    for (let i = 0; i < many; i++) {
+      sow('deep', kind, clump, 2.6, 0.55 + random() * 0.95 * (0.5 + clump.light), deepTints[kind])
+    }
+  })
+
+  // The mat underneath, which is what stops the ground reading as bare dirt.
+  const matTints: [THREE.Color, THREE.Color] = [colour('#79934a'), colour('#98a257')]
+  for (const clump of clumps(4600, 112, 211, true)) {
+    const many = 6 + Math.round(random() * 5)
+    for (let i = 0; i < many; i++) {
+      sow('mat', 0, clump, 3.2, 0.22 + random() * 0.3, matTints)
+    }
+  }
+
+  // Ferns prefer the shade, so they fill in where the grass thins.
+  const fernTints: [THREE.Color, THREE.Color] = [colour('#6d8c47'), colour('#4e7038')]
+  for (const clump of clumps(1100, 104, 313)) {
+    const many = 3 + Math.round(random() * 6 * (1.3 - clump.light))
+    for (let i = 0; i < many; i++) {
+      sow('fern', 0, clump, 2.2, 0.7 + random() * 0.8, fernTints)
+    }
+  }
+
+  // Saplings: the wood coming back wherever it is let.
+  const saplingTints: [THREE.Color, THREE.Color] = [colour('#3f6150'), colour('#5f7442')]
+  for (const clump of clumps(650, 112, 409)) {
+    // Not in the clearing: the ground around the tower is kept open.
+    if (Math.hypot(clump.x, clump.z) < CLEARING + 9) continue
+    const many = 1 + Math.round(random() * 2)
+    for (let i = 0; i < many; i++) {
+      sow('sapling', 0, clump, 4, 1.1 + random() * 2.4, saplingTints)
+    }
+  }
+
+  const deepMaterials = [0, 1, 2, 3].map((kind) => {
+    const material = new THREE.MeshLambertMaterial({
+      map: grassTexture(true, kind),
+      alphaTest: 0.4,
+      side: THREE.DoubleSide,
+    })
+    windy(material, 0.24)
+    return material
+  })
+  const matMaterial = new THREE.MeshLambertMaterial({
+    map: grassTexture(false, 1),
+    alphaTest: 0.4,
+    side: THREE.DoubleSide,
+  })
+  windy(matMaterial, 0.1)
+  const fernMaterial = new THREE.MeshLambertMaterial({
+    map: fernTexture(),
+    alphaTest: 0.35,
+    side: THREE.DoubleSide,
+  })
+  windy(fernMaterial, 0.12)
+  const saplingMaterial = new THREE.MeshLambertMaterial({ flatShading: true })
+
+  const tuft3 = tuftGeometry(3)
+  const tuft2 = tuftGeometry(2)
+  const fir = firGeometry()
+  plantInto(group, buckets, 'mat', () => tuft2, () => matMaterial)
+  plantInto(group, buckets, 'deep', () => tuft2, (kind) => deepMaterials[kind])
+  plantInto(group, buckets, 'fern', () => tuft3, () => fernMaterial)
+  plantInto(group, buckets, 'sapling', () => fir, () => saplingMaterial, 0)
+
+  // Deadfall, which is the other thing a wood has that a plantation does not.
+  const fallenCount = 150
+  const trunk = new THREE.CylinderGeometry(0.26, 0.34, 1, 7)
+  trunk.rotateZ(Math.PI / 2)
+  const fallen = new THREE.InstancedMesh(
+    trunk,
+    new THREE.MeshLambertMaterial({ color: colour('#4b3b2c'), flatShading: true }),
+    fallenCount,
+  )
+  const matrix = new THREE.Matrix4()
+  const spin = new THREE.Quaternion()
+  const euler = new THREE.Euler()
+  const position = new THREE.Vector3()
+  const scale = new THREE.Vector3()
+  let fallenPlaced = 0
+  while (fallenPlaced < fallenCount) {
+    const angle = random() * Math.PI * 2
+    const radius = 14 + random() * 110
+    const x = Math.cos(angle) * radius
+    const z = Math.sin(angle) * radius
+    if (inPond(x, z, 2) || onTrail(x, z) || distanceToRoad(x, z) < ROAD.clear) continue
+    euler.set((random() - 0.5) * 0.25, random() * Math.PI * 2, (random() - 0.5) * 0.2)
+    spin.setFromEuler(euler)
+    position.set(x, groundAt(x, z) + 0.26, z)
+    const length = 3 + random() * 6
+    scale.set(length, 0.75 + random() * 0.5, 0.75 + random() * 0.5)
+    matrix.compose(position, spin, scale)
+    fallen.setMatrixAt(fallenPlaced, matrix)
+    fallenPlaced++
+  }
+  fallen.instanceMatrix.needsUpdate = true
+  fallen.computeBoundingSphere()
+  group.add(fallen)
+
+  return group
 }
 
 /* ------------------------------------------------------------- the big fir */
@@ -758,7 +1296,7 @@ function buildSmoke(): Column {
   })
 
   const puffs: THREE.Sprite[] = []
-  for (let i = 0; i < 26; i++) {
+  for (let i = 0; i < 36; i++) {
     const sprite = new THREE.Sprite(material.clone())
     puffs.push(sprite)
     group.add(sprite)
@@ -796,7 +1334,7 @@ function buildMotes(): THREE.Points {
 
 export interface World {
   finder: THREE.Group
-  update(elapsed: number, dt: number): void
+  update(elapsed: number, dt: number, watcher: THREE.Vector3): void
 }
 
 export function buildWorld(scene: THREE.Scene): World {
@@ -820,6 +1358,12 @@ export function buildWorld(scene: THREE.Scene): World {
   const town = buildTown()
   scene.add(town.group)
 
+  const props = buildProps()
+  scene.add(props.group)
+
+  const wildlife = buildWildlife(wind)
+  scene.add(wildlife.group)
+
   const smoke = buildSmoke()
   scene.add(smoke.group)
 
@@ -839,8 +1383,11 @@ export function buildWorld(scene: THREE.Scene): World {
 
   return {
     finder: tower.finder,
-    update(elapsed) {
+    update(elapsed, dt, watcher) {
       wind.value = elapsed
+      eye.value.copy(watcher)
+      props.update(elapsed)
+      wildlife.update(elapsed, dt, watcher)
 
       // The brazier breathes rather than blinks.
       const flicker = 1 + Math.sin(elapsed * 9.3) * 0.06 + Math.sin(elapsed * 21.7) * 0.04
@@ -859,7 +1406,7 @@ export function buildWorld(scene: THREE.Scene): World {
         const t = (elapsed * 0.035 + i / smoke.puffs.length) % 1
         const lean = t * t
         puff.position.set(lean * 150 + Math.sin(t * 7 + i) * 9, t * 330, Math.cos(t * 5 + i) * 12)
-        const size = 26 + lean * 240
+        const size = 16 + lean * 165
         puff.scale.set(size, size, 1)
         // Thin where it leaves the trees, thinning again as it spreads out.
         ;(puff.material as THREE.SpriteMaterial).opacity = 0.72 * Math.min(1, Math.sin(Math.PI * Math.min(1, t * 1.35)) * 1.5)

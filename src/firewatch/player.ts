@@ -7,8 +7,8 @@
  */
 import * as THREE from 'three'
 import {
+  ARRIVAL,
   DECK,
-  DECK_STAND,
   EYE,
   LADDER_STAND,
   advanceClimb,
@@ -121,7 +121,7 @@ export class Player {
         this.position.set(LADDER_STAND.x, footing, LADDER_STAND.z + 0.4)
       }
       if (this.climb.stance === 'deck') {
-        this.position.set(DECK_STAND.x, DECK.y, DECK_STAND.z)
+        this.position.set(ARRIVAL.x, DECK.y, ARRIVAL.z)
       }
       return
     }
