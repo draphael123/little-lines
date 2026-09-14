@@ -154,7 +154,20 @@ npm run dev          # then open http://localhost:5801/firewatch.html
 | Mouse | Look — pointer lock, or drag if the browser refuses it |
 | `E` | Take the ladder, up or down |
 | `R` | Radio the smoke in, once you are up and facing it |
+| Left click | A light cut |
+| `F` / middle click | A heavy one |
+| Right click (hold) | Guard |
+| `Space` | Roll, in whatever direction you are holding |
 | `Esc` | Pause |
+
+There is a sword in your left hand and a quintain in the clearing to use it
+on: a shield on one end of a crossbar and a sandbag on the other. Hit the
+shield and the thing spins; the bag comes round behind it, and if you are
+still standing there when it arrives you take it across the shoulders. Guard
+and it costs you wind instead of blood; roll and it misses you entirely.
+Vigour and wind are the two bars in the corner — wind pays for every swing,
+every roll, every second of a raised guard and every step of a run, and a
+guard you cannot pay for falls.
 
 It opens on a title card with the camera circling the tower. Escape pauses,
 and both the title and the pause screen open the same settings: mouse
@@ -181,14 +194,18 @@ src/firewatch/
   player.ts     walking, looking and the climb
   wildlife.ts   deer, rabbits, birds, bats, a heron and the fireflies
   props.ts      the pond, the stones, the ruin, the camp and the wayside
+  combat.ts     stances, timings, reach, and what wind and vigour pay for
+  sword.ts      the blade in your left hand, and the poses it moves through
+  quintain.ts   the training post, which hits back
   audio.ts      the score and the ambience, synthesised
   settings.ts   what the player chose, and how it is read back
   menu.ts       the title card, the pause screen and the settings
   main.ts       the loop, the bloom pass and the radio traffic
 ```
 
-The same split as the railway: `lookout.ts` never imports a renderer, so the ladder, the bearings
-and where the trees stand are all exercised headlessly in `lookout.test.ts`.
+The same split as the railway: `lookout.ts` and `combat.ts` never import a renderer, so the
+ladder, the bearings, where the trees stand, every swing timing and the whole stamina economy
+are exercised headlessly in `lookout.test.ts` and `combat.test.ts`.
 
 Two things worth knowing:
 

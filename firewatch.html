@@ -83,9 +83,55 @@
         min-height: 1em;
       }
 
+      /* Vigour and wind, bottom left, with the radio traffic above them. */
+      #fw-vitals {
+        left: 34px;
+        bottom: 30px;
+        display: grid;
+        gap: 7px;
+      }
+      .fw-vital {
+        display: grid;
+        grid-template-columns: 3.6rem 1fr;
+        align-items: center;
+        gap: 10px;
+      }
+      .fw-vital span {
+        font-size: 0.58rem;
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+        color: var(--dim);
+      }
+      .fw-bar {
+        width: min(15rem, 34vw);
+        height: 6px;
+        border: 1px solid rgba(246, 227, 207, 0.28);
+        background: rgba(20, 10, 14, 0.55);
+        overflow: hidden;
+      }
+      .fw-bar i {
+        display: block;
+        height: 100%;
+        width: 100%;
+        transition: width 140ms linear;
+      }
+      .fw-bar .is-health { background: linear-gradient(90deg, #b8402f, #e0713f); }
+      .fw-bar .is-stamina { background: linear-gradient(90deg, #7d8a44, #cbbb5f); }
+
+      /* A wash of colour when something lands, either way round. */
+      #fw-flash {
+        position: fixed;
+        inset: 0;
+        z-index: 4;
+        pointer-events: none;
+        opacity: 0;
+        mix-blend-mode: screen;
+        transition: opacity 90ms linear;
+      }
+
       #fw-radio {
         left: 34px;
-        bottom: 34px;
+        bottom: 96px;
         max-width: min(38rem, 52vw);
         display: flex;
         flex-direction: column;
@@ -354,7 +400,8 @@
       #fw-fallback p { color: var(--dim); max-width: 34rem; }
 
       @media (max-width: 720px) {
-        #fw-radio { left: 18px; bottom: 20px; max-width: 76vw; }
+        #fw-radio { left: 18px; bottom: 84px; max-width: 76vw; }
+        #fw-vitals { left: 18px; bottom: 18px; }
         #fw-hint { display: none; }
       }
     </style>
@@ -369,13 +416,26 @@
       <span id="fw-sighted"></span>
     </div>
 
+    <div id="fw-vitals" class="fw-hud" hidden>
+      <div class="fw-vital">
+        <span>Vigour</span>
+        <div class="fw-bar"><i id="fw-health" class="is-health"></i></div>
+      </div>
+      <div class="fw-vital">
+        <span>Wind</span>
+        <div class="fw-bar"><i id="fw-stamina" class="is-stamina"></i></div>
+      </div>
+    </div>
+
+    <div id="fw-flash"></div>
+
     <div id="fw-prompt" class="fw-hud"></div>
     <div id="fw-radio" class="fw-hud" aria-live="polite"></div>
 
     <div id="fw-hint" class="fw-hud is-dim">
-      <div><b>W A S D</b> walk · <b>Shift</b> run</div>
-      <div><b>Mouse</b> look · <b>E</b> climb</div>
-      <div><b>R</b> radio · <b>Esc</b> pause</div>
+      <div><b>W A S D</b> walk · <b>Shift</b> run · <b>Space</b> roll</div>
+      <div><b>Click</b> cut · <b>F</b> heavy · <b>Right-click</b> guard</div>
+      <div><b>E</b> climb · <b>R</b> radio · <b>Esc</b> pause</div>
     </div>
 
     <div id="fw-intro" class="fw-screen is-on">
@@ -391,9 +451,9 @@
           <button id="fw-intro-settings" class="fw-button" type="button">Settings</button>
         </div>
         <ul class="fw-keys">
-          <li><b>W A S D</b> walk<span>·</span><b>Shift</b> run</li>
-          <li><b>Mouse</b> look<span>·</span><b>E</b> climb<span>·</span><b>R</b> radio</li>
-          <li><b>Esc</b> pause</li>
+          <li><b>W A S D</b> walk<span>·</span><b>Shift</b> run<span>·</span><b>Space</b> roll</li>
+          <li><b>Click</b> cut<span>·</span><b>F</b> heavy<span>·</span><b>Right-click</b> guard</li>
+          <li><b>E</b> climb<span>·</span><b>R</b> radio<span>·</span><b>Esc</b> pause</li>
         </ul>
       </div>
     </div>

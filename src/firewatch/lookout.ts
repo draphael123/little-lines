@@ -62,6 +62,7 @@ export const LANDMARKS = {
   ruin: { x: -36, z: -56, clear: 11 },
   camp: { x: 11.5, z: 13.5, clear: 5 },
   cart: { x: -62, z: 78, clear: 6 },
+  quintain: { x: 15.5, z: 5, clear: 5 },
   signpost: { x: 2.5, z: 84, clear: 3 },
 }
 
@@ -407,11 +408,30 @@ export function clampToDeck(x: number, z: number): { x: number; z: number } {
   return pushOutOfTrunk(cx, cz, 1.25)
 }
 
+/** Things on the ground you cannot walk through, beyond the tower itself. */
+export const SOLID: Array<{ x: number; z: number; radius: number }> = [
+  // Wide enough to stand clear of the quintain's arm: inside its sweep the
+  // sandbag catches you the moment the thing turns at all, which is a lesson
+  // in the wrong thing.
+  { x: LANDMARKS.quintain.x, z: LANDMARKS.quintain.z, radius: 1.75 },
+]
+
 /** Keep somebody on the ground out of the trunk and inside the wood. */
 export function clampToGround(x: number, z: number): { x: number; z: number } {
   const clear = pushOutOfTrunk(x, z, BASE.radius + 0.45)
   let cx = clear.x
   let cz = clear.z
+
+  for (const solid of SOLID) {
+    const dx = cx - solid.x
+    const dz = cz - solid.z
+    const r = Math.hypot(dx, dz)
+    if (r < solid.radius) {
+      const scale = r < 0.001 ? 1 : solid.radius / r
+      cx = solid.x + (r < 0.001 ? solid.radius : dx * scale)
+      cz = solid.z + (r < 0.001 ? 0 : dz * scale)
+    }
+  }
   const out = Math.hypot(cx, cz)
   if (out > WANDER) {
     cx = (cx / out) * WANDER

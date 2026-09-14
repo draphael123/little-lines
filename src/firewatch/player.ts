@@ -44,6 +44,13 @@ export class Player {
   invertY = false
   headBob = true
 
+  /** Cleared while the tank is empty, so a run needs stamina. */
+  runAllowed = true
+  /** Set while a blow has hold of you and your legs are not your own. */
+  locked = false
+
+  private dash = { x: 0, z: 0, left: 0 }
+
   constructor(camera: THREE.PerspectiveCamera) {
     this.camera = camera
     this.camera.rotation.order = 'YXZ'
@@ -113,6 +120,29 @@ export class Player {
     return null
   }
 
+  /** 1 if that key is down, 0 if it is not. For aiming a roll. */
+  pressing(code: string): number {
+    return this.keys.has(code) ? 1 : 0
+  }
+
+  /** How fast you are actually moving over the ground, in metres a second. */
+  get speed(): number {
+    return Math.hypot(this.velocity.x, this.velocity.z)
+  }
+
+  /**
+   * A roll: a burst of movement in the direction you are holding, in local
+   * space, which ignores the usual easing because that is the point of it.
+   */
+  startDash(localX: number, localZ: number, speed: number, seconds: number) {
+    if (this.moving() || this.climb.stance === 'deck') return
+    const sin = Math.sin(this.yaw)
+    const cos = Math.cos(this.yaw)
+    this.dash.x = (-sin * localZ + cos * localX) * speed
+    this.dash.z = (-cos * localZ - sin * localX) * speed
+    this.dash.left = seconds
+  }
+
   /** Take hold of the ladder, or let go of it. Returns what happened. */
   interact(): 'climb' | 'descend' | null {
     const offer = this.offer
@@ -153,7 +183,7 @@ export class Player {
       (this.keys.has('KeyA') || this.keys.has('ArrowLeft') ? 1 : 0)
 
     const onDeck = this.climb.stance === 'deck'
-    const running = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight')
+    const running = (this.keys.has('ShiftLeft') || this.keys.has('ShiftRight')) && this.runAllowed
     const speed = onDeck ? 1.5 : running ? RUN : WALK
 
     const sin = Math.sin(this.yaw)
@@ -161,10 +191,19 @@ export class Player {
     const wishX = (-sin * forward + cos * strafe) * speed
     const wishZ = (-cos * forward - sin * strafe) * speed
 
-    // A little weight in getting going and in stopping again.
-    const ease = Math.min(1, dt * 9)
-    this.velocity.x += (wishX - this.velocity.x) * ease
-    this.velocity.z += (wishZ - this.velocity.z) * ease
+    if (this.dash.left > 0) {
+      // A roll goes where it was aimed, whatever the keys say now.
+      this.dash.left -= dt
+      const fade = Math.max(0, Math.min(1, this.dash.left / 0.18))
+      this.velocity.x = this.dash.x * fade
+      this.velocity.z = this.dash.z * fade
+    } else {
+      // A little weight in getting going and in stopping again.
+      const ease = Math.min(1, dt * 9)
+      const held = this.locked ? 0 : 1
+      this.velocity.x += (wishX * held - this.velocity.x) * ease
+      this.velocity.z += (wishZ * held - this.velocity.z) * ease
+    }
 
     const next = clampTo(
       onDeck,

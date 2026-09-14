@@ -7,7 +7,34 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
-import { audioRunning, duck, listen, setLevels, startAudio } from './audio'
+import {
+  audioRunning,
+  blockSound,
+  dodgeSound,
+  duck,
+  hitSound,
+  hurtSound,
+  listen,
+  setLevels,
+  startAudio,
+  swingSound,
+} from './audio'
+import {
+  MAX_HEALTH,
+  MAX_STAMINA,
+  HEAVY,
+  LIGHT,
+  DODGE,
+  attack,
+  canRun,
+  dodge,
+  guard,
+  newFighter,
+  stepFighter,
+  striking,
+} from './combat'
+import { buildQuintain } from './quintain'
+import { buildSword } from './sword'
 import { DECK, EYE, SMOKE, TRUNK, bearingGap, bearingOf, groundAt, readBearing } from './lookout'
 import { createMenu } from './menu'
 import { Player } from './player'
@@ -15,6 +42,9 @@ import { buildWorld } from './scene'
 import { QUALITY, type Settings } from './settings'
 
 const canvas = document.getElementById('fw-canvas') as HTMLCanvasElement | null
+const healthBar = document.getElementById('fw-health')
+const staminaBar = document.getElementById('fw-stamina')
+const flash = document.getElementById('fw-flash')
 const prompt = document.getElementById('fw-prompt')
 const compass = document.getElementById('fw-compass')
 const bearingOut = document.getElementById('fw-bearing')
@@ -70,6 +100,18 @@ function start(surface: HTMLCanvasElement) {
 
   const world = buildWorld(scene)
   const player = new Player(camera)
+
+  // The sword hangs off the camera, so the camera has to be in the scene.
+  const sword = buildSword()
+  camera.add(sword.group)
+  scene.add(camera)
+
+  const quintain = buildQuintain()
+  scene.add(quintain.group)
+
+  const fighter = newFighter()
+  const aim = new THREE.Vector3()
+  const toTarget = new THREE.Vector3()
   const brazier = new THREE.Vector3(TRUNK.x + DECK.halfX - 1.0, DECK.y + 1.1, TRUNK.z + DECK.minZ + 1.1)
 
   /* ----------------------------------------------------------- the menus */
@@ -138,13 +180,26 @@ function start(surface: HTMLCanvasElement) {
   /* ---------------------------------------------------------------- input */
 
   let dragging = false
+  let guardHeld = false
   const locked = () => document.pointerLockElement === surface
+
+  surface.addEventListener('contextmenu', (event) => event.preventDefault())
 
   surface.addEventListener('pointerdown', (event) => {
     if (mode !== 'playing') return
-    dragging = true
-    surface.setPointerCapture(event.pointerId)
-    lock()
+    if (!locked()) {
+      // The first press is for taking the pointer, not for swinging.
+      dragging = true
+      surface.setPointerCapture(event.pointerId)
+      lock()
+      return
+    }
+    if (event.button === 0) swing(false)
+    else if (event.button === 1) swing(true)
+    else if (event.button === 2) guardHeld = true
+  })
+  surface.addEventListener('pointerup', (event) => {
+    if (event.button === 2) guardHeld = false
   })
   surface.addEventListener('pointerup', (event) => {
     dragging = false
@@ -152,7 +207,9 @@ function start(surface: HTMLCanvasElement) {
   })
 
   // Losing the pointer is how Escape reaches us: the browser eats the key.
+  let lockedAt = 0
   document.addEventListener('pointerlockchange', () => {
+    lockedAt = performance.now()
     if (!locked() && mode === 'playing' && !dragging) pause()
   })
 
@@ -161,8 +218,14 @@ function start(surface: HTMLCanvasElement) {
     // Pointer lock is the good way to look around. Where it is refused — an
     // iframe, a browser that will not grant it — dragging has to do the same
     // job, so the camera is never stuck.
-    if (locked()) player.look(event.movementX, event.movementY)
-    else if (dragging) player.look(event.movementX * 1.4, event.movementY * 1.4)
+    // Taking the pointer warps the cursor to the middle of the screen, and
+    // the browser reports that jump as movement. Swallow the first report
+    // after a lock change, and cap the rest: no hand moves a mouse that fast,
+    // so anything larger is the browser, not the player.
+    if (performance.now() - lockedAt < 80) return
+    const cap = (value: number) => Math.max(-110, Math.min(110, value))
+    if (locked()) player.look(cap(event.movementX), cap(event.movementY))
+    else if (dragging) player.look(cap(event.movementX) * 1.4, cap(event.movementY) * 1.4)
   })
 
   window.addEventListener('keydown', (event) => {
@@ -172,7 +235,7 @@ function start(surface: HTMLCanvasElement) {
       return
     }
     if (mode !== 'playing' || event.repeat) return
-    if (event.code === 'KeyE' || event.code === 'Space') {
+    if (event.code === 'KeyE') {
       if (player.interact()) event.preventDefault()
       return
     }
@@ -180,11 +243,21 @@ function start(surface: HTMLCanvasElement) {
       callItIn()
       return
     }
+    if (event.code === 'KeyF') {
+      swing(true)
+      return
+    }
+    if (event.code === 'Space') {
+      roll()
+      event.preventDefault()
+      return
+    }
     player.press(event.code)
   })
   window.addEventListener('keyup', (event) => player.release(event.code))
   window.addEventListener('blur', () => {
     player.relax()
+    guardHeld = false
     pause()
   })
 
@@ -206,6 +279,49 @@ function start(surface: HTMLCanvasElement) {
     renderer.setSize(window.innerWidth, window.innerHeight, false)
     composer.setSize(window.innerWidth, window.innerHeight)
   })
+
+  /* ----------------------------------------------------------------- sword */
+
+  function swing(heavy: boolean) {
+    if (player.stance !== 'ground') return
+    if (attack(fighter, heavy)) swingSound(heavy)
+  }
+
+  function roll() {
+    if (player.stance !== 'ground') return
+    const x = player.pressing('KeyD') - player.pressing('KeyA')
+    const z = player.pressing('KeyW') - player.pressing('KeyS')
+    if (dodge(fighter, x, z)) {
+      // The roll's direction is whatever it settled on, including the step
+      // back you get for pressing it with nothing held.
+      player.startDash(fighter.dodgeX, fighter.dodgeZ, DODGE.speed, 0.3)
+      dodgeSound()
+    }
+  }
+
+  /** The blade is out: is the shield where the blade is going? */
+  function testStrike() {
+    if (!striking(fighter)) return
+    const swingOf = fighter.stance === 'heavy' ? HEAVY : LIGHT
+    camera.getWorldDirection(aim)
+    toTarget.copy(quintain.shield).sub(camera.position)
+    const range = toTarget.length()
+    if (range > swingOf.reach) return
+    // A swing is a wide arc, not a laser: anything roughly in front counts.
+    if (toTarget.normalize().dot(aim) < 0.55) return
+    fighter.spent = true
+    quintain.strike(swingOf.damage)
+    hitSound(fighter.stance === 'heavy')
+    hurtFlash(0.12, '#ffd9a8')
+  }
+
+  let flashLeft = 0
+  function hurtFlash(seconds: number, colour: string) {
+    if (!flash) return
+    flash.style.background = colour
+    flash.style.opacity = '0.5'
+    flashLeft = seconds
+  }
 
   /* ----------------------------------------------------------------- radio */
 
@@ -255,7 +371,7 @@ function start(surface: HTMLCanvasElement) {
   const clock = new THREE.Clock()
   let elapsed = 0
 
-  const debug = { camera, player, scene, renderer, world, menu, audioRunning, groundAt, eye: EYE, paused: false }
+  const debug = { camera, player, scene, renderer, world, menu, audioRunning, groundAt, eye: EYE, fighter, quintain, sword, paused: false }
   if (new URLSearchParams(window.location.search).has('debug')) {
     ;(window as unknown as Record<string, unknown>).__fw = debug
   }
@@ -283,12 +399,46 @@ function start(surface: HTMLCanvasElement) {
       world.update(elapsed, dt, camera.position)
     } else if (mode === 'playing') {
       elapsed += dt
+      const running = player.speed > 4.2
+
+      // The guard goes up the moment it can, so holding it through a swing
+      // raises it as the swing ends rather than being thrown away.
+      if (guardHeld) guard(fighter, true)
+      else guard(fighter, false)
+
+      stepFighter(fighter, dt, running)
+      player.runAllowed = canRun(fighter)
+      player.locked = fighter.stance === 'stagger'
+      testStrike()
+
       player.update(dt)
       world.update(elapsed, dt, camera.position)
+
+      const landed = quintain.update(dt, camera.position, fighter)
+      if (landed === 'blocked') {
+        blockSound()
+        hurtFlash(0.1, '#cfd6dd')
+      } else if (landed === 'hurt') {
+        hurtSound()
+        hurtFlash(0.3, '#b23a2e')
+      }
+
+      sword.pose(fighter, elapsed, Math.min(1, player.speed / 4), dt)
       listen(camera.position.y, camera.position.distanceTo(brazier))
+
+      if (flashLeft > 0 && flash) {
+        flashLeft -= dt
+        flash.style.opacity = String(Math.max(0, flashLeft) * 1.6)
+      }
+
+      if (healthBar) healthBar.style.width = `${(fighter.health / MAX_HEALTH) * 100}%`
+      if (staminaBar) staminaBar.style.width = `${(fighter.stamina / MAX_STAMINA) * 100}%`
     }
 
     const playing = mode === 'playing'
+    sword.group.visible = playing && player.stance !== 'climbing' && player.stance !== 'descending'
+    const vitals = document.getElementById('fw-vitals')
+    if (vitals) vitals.hidden = !playing
     const onDeck = player.stance === 'deck'
     const bearing = bearingOf(player.facing)
     const gap = bearingGap(bearing, SMOKE.bearing)

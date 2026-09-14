@@ -247,6 +247,81 @@ function play() {
   timer = window.setInterval(bar, 8000)
 }
 
+/* --------------------------------------------------------------- the sword */
+
+/** A shaped burst of noise: the blade moving, wood taking it, a block. */
+function burst(
+  from: number,
+  to: number,
+  seconds: number,
+  level: number,
+  Q: number,
+  type: BiquadFilterType = 'bandpass',
+) {
+  if (!rig) return
+  const { ctx, ambience } = rig
+  const now = ctx.currentTime
+  const source = ctx.createBufferSource()
+  source.buffer = noiseBuffer(ctx, Math.max(0.35, seconds + 0.1))
+  const band = ctx.createBiquadFilter()
+  band.type = type
+  band.frequency.setValueAtTime(from, now)
+  band.frequency.exponentialRampToValueAtTime(Math.max(60, to), now + seconds)
+  band.Q.value = Q
+  const gain = ctx.createGain()
+  gain.gain.setValueAtTime(0.0001, now)
+  gain.gain.exponentialRampToValueAtTime(level, now + 0.012)
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + seconds)
+  source.connect(band).connect(gain).connect(ambience)
+  source.start(now)
+  source.stop(now + seconds + 0.1)
+}
+
+function tone(frequency: number, seconds: number, level: number, type: OscillatorType = 'triangle') {
+  if (!rig) return
+  const { ctx, ambience } = rig
+  const now = ctx.currentTime
+  const osc = ctx.createOscillator()
+  osc.type = type
+  osc.frequency.setValueAtTime(frequency, now)
+  osc.frequency.exponentialRampToValueAtTime(Math.max(40, frequency * 0.4), now + seconds)
+  const gain = ctx.createGain()
+  gain.gain.setValueAtTime(0.0001, now)
+  gain.gain.exponentialRampToValueAtTime(level, now + 0.01)
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + seconds)
+  osc.connect(gain).connect(ambience)
+  osc.start(now)
+  osc.stop(now + seconds + 0.05)
+}
+
+/** The blade going through the air. A heavy swing is slower and lower. */
+export function swingSound(heavy: boolean) {
+  burst(heavy ? 1500 : 2600, heavy ? 420 : 900, heavy ? 0.34 : 0.2, heavy ? 0.3 : 0.22, 1.1)
+}
+
+/** Steel into a shield: a crack, and the board ringing after it. */
+export function hitSound(heavy: boolean) {
+  burst(900, 220, 0.16, heavy ? 0.5 : 0.36, 1.6)
+  tone(heavy ? 150 : 210, heavy ? 0.4 : 0.26, heavy ? 0.22 : 0.15)
+}
+
+/** Something arriving on your guard rather than on you. */
+export function blockSound() {
+  burst(2400, 1400, 0.22, 0.34, 6, 'bandpass')
+  tone(620, 0.5, 0.12, 'square')
+}
+
+/** A boot turning in dry needles. */
+export function dodgeSound() {
+  burst(1800, 600, 0.24, 0.16, 0.8, 'highpass')
+}
+
+/** Getting caught by the sandbag. */
+export function hurtSound() {
+  burst(420, 110, 0.3, 0.4, 0.9, 'lowpass')
+  tone(98, 0.5, 0.2, 'sine')
+}
+
 /* ------------------------------------------------------------------ mixer */
 
 export function setLevels(next: AudioLevels) {
