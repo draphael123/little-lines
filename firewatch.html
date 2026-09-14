@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Fire Watch — a lookout in the woods</title>
+    <meta
+      name="description"
+      content="A small first-person demo: a dusk forest, a watchtower you climb into, and a column of smoke on the far ridge."
+    />
+    <meta name="theme-color" content="#1b1116" />
+    <meta name="color-scheme" content="dark" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <style>
+      :root {
+        --ink: #f6e3cf;
+        --dim: rgba(246, 227, 207, 0.62);
+        --ember: #ffb257;
+        --face: 'Futura', 'Avenir Next', 'Trebuchet MS', ui-sans-serif, system-ui, sans-serif;
+      }
+      * { box-sizing: border-box; }
+      /* Layout rules below set `display`, which would otherwise beat `hidden`. */
+      [hidden] { display: none !important; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        background: #1b1116;
+        color: var(--ink);
+        font-family: var(--face);
+        overflow: hidden;
+        -webkit-font-smoothing: antialiased;
+      }
+      #fw-canvas { display: block; width: 100vw; height: 100vh; cursor: crosshair; }
+
+      /* A slight vignette and warm wash, which is most of the mood. */
+      .fw-grade {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background:
+          radial-gradient(ellipse at 50% 55%, rgba(0, 0, 0, 0) 42%, rgba(24, 8, 12, 0.55) 100%),
+          linear-gradient(180deg, rgba(255, 140, 70, 0.06), rgba(40, 12, 30, 0.12));
+      }
+
+      .fw-hud { position: fixed; pointer-events: none; z-index: 3; }
+
+      #fw-prompt {
+        left: 50%;
+        bottom: 22vh;
+        transform: translate(-50%, 8px);
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        font-size: 0.82rem;
+        padding: 0.5rem 0.95rem;
+        border: 1px solid rgba(246, 227, 207, 0.28);
+        border-radius: 2px;
+        background: rgba(20, 10, 14, 0.4);
+        opacity: 0;
+        transition: opacity 220ms ease, transform 220ms ease;
+      }
+      #fw-prompt.is-on { opacity: 1; transform: translate(-50%, 0); }
+
+      #fw-compass {
+        top: 26px;
+        left: 50%;
+        transform: translateX(-50%);
+        text-align: center;
+        letter-spacing: 0.3em;
+      }
+      #fw-compass .fw-rule {
+        width: 220px;
+        height: 1px;
+        margin: 8px auto 0;
+        background: linear-gradient(90deg, transparent, rgba(246, 227, 207, 0.5), transparent);
+      }
+      #fw-bearing { font-size: 1.5rem; }
+      #fw-sighted {
+        display: block;
+        margin-top: 8px;
+        font-size: 0.68rem;
+        letter-spacing: 0.22em;
+        color: var(--ember);
+        min-height: 1em;
+      }
+
+      /* Vigour and wind, bottom left, with the radio traffic above them. */
+      #fw-vitals {
+        left: 34px;
+        bottom: 30px;
+        display: grid;
+        gap: 7px;
+      }
+      .fw-vital {
+        display: grid;
+        grid-template-columns: 3.6rem 1fr;
+        align-items: center;
+        gap: 10px;
+      }
+      .fw-vital span {
+        font-size: 0.58rem;
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+        color: var(--dim);
+      }
+      .fw-bar {
+        width: min(15rem, 34vw);
+        height: 6px;
+        border: 1px solid rgba(246, 227, 207, 0.28);
+        background: rgba(20, 10, 14, 0.55);
+        overflow: hidden;
+      }
+      .fw-bar i {
+        display: block;
+        height: 100%;
+        width: 100%;
+        transition: width 140ms linear;
+      }
+      .fw-bar .is-health { background: linear-gradient(90deg, #b8402f, #e0713f); }
+      .fw-bar .is-stamina { background: linear-gradient(90deg, #7d8a44, #cbbb5f); }
+
+      /* A wash of colour when something lands, either way round. */
+      #fw-flash {
+        position: fixed;
+        inset: 0;
+        z-index: 4;
+        pointer-events: none;
+        opacity: 0;
+        mix-blend-mode: screen;
+        transition: opacity 90ms linear;
+      }
+
+      #fw-radio {
+        left: 34px;
+        bottom: 96px;
+        max-width: min(38rem, 52vw);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .fw-line {
+        margin: 0;
+        font-size: 1rem;
+        line-height: 1.45;
+        opacity: 0;
+        transform: translateY(6px);
+        transition: opacity 420ms ease, transform 420ms ease;
+        text-shadow: 0 2px 12px rgba(0, 0, 0, 0.7);
+      }
+      .fw-line.is-in { opacity: 1; transform: none; }
+      .fw-line span {
+        display: block;
+        font-size: 0.64rem;
+        letter-spacing: 0.26em;
+        text-transform: uppercase;
+        color: var(--ember);
+        margin-bottom: 3px;
+      }
+
+      #fw-hint {
+        right: 28px;
+        bottom: 28px;
+        text-align: right;
+        font-size: 0.68rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--dim);
+        line-height: 1.9;
+        transition: opacity 400ms ease;
+      }
+      #fw-hint.is-dim { opacity: 0; }
+      #fw-hint b { color: var(--ink); font-weight: 500; }
+
+      /* ------------------------------------------------------------ menus */
+
+      .fw-screen {
+        position: fixed;
+        inset: 0;
+        z-index: 5;
+        display: grid;
+        place-items: center;
+        padding: max(1.5rem, 4vh) 1.5rem;
+        overflow-y: auto;
+        background:
+          radial-gradient(ellipse at 50% 62%, rgba(224, 131, 72, 0.2), transparent 62%),
+          linear-gradient(180deg, rgba(18, 9, 13, 0.86), rgba(24, 12, 16, 0.74));
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 420ms ease, visibility 420ms;
+      }
+      .fw-screen.is-on { opacity: 1; visibility: visible; }
+      /* The title card is a window onto the wood, so it keeps a lighter wash. */
+      #fw-intro {
+        background:
+          radial-gradient(ellipse at 50% 64%, rgba(224, 131, 72, 0.16), transparent 58%),
+          linear-gradient(180deg, rgba(18, 9, 13, 0.32), rgba(22, 11, 15, 0.62) 55%, rgba(18, 9, 13, 0.74));
+      }
+
+      .fw-screen-inner {
+        width: min(34rem, 100%);
+        text-align: center;
+        display: grid;
+        gap: 1rem;
+        justify-items: center;
+      }
+
+      .fw-eyebrow {
+        margin: 0;
+        font-size: 0.66rem;
+        letter-spacing: 0.34em;
+        text-transform: uppercase;
+        color: var(--ember);
+      }
+      .fw-title {
+        margin: 0;
+        font-size: clamp(2.6rem, 9vw, 5.2rem);
+        letter-spacing: 0.3em;
+        text-indent: 0.3em;
+        font-weight: 500;
+        color: #ffd9a8;
+        text-shadow: 0 0 44px rgba(224, 131, 72, 0.45);
+      }
+      .fw-title.is-small {
+        font-size: clamp(1.6rem, 5vw, 2.4rem);
+        letter-spacing: 0.36em;
+        text-indent: 0.36em;
+      }
+      .fw-blurb {
+        margin: 0;
+        max-width: 30rem;
+        color: var(--dim);
+        line-height: 1.65;
+        letter-spacing: 0.03em;
+      }
+      .fw-note {
+        margin: 0;
+        font-size: 0.76rem;
+        color: var(--dim);
+        line-height: 1.6;
+      }
+
+      .fw-buttons { display: flex; flex-wrap: wrap; gap: 0.6rem; justify-content: center; }
+      .fw-button {
+        appearance: none;
+        cursor: pointer;
+        font: inherit;
+        font-size: 0.76rem;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--ink);
+        padding: 0.72rem 1.35rem;
+        border: 1px solid rgba(246, 227, 207, 0.3);
+        border-radius: 2px;
+        background: rgba(32, 16, 20, 0.5);
+        transition: background 180ms ease, border-color 180ms ease, transform 180ms ease;
+      }
+      .fw-button:hover, .fw-button:focus-visible {
+        background: rgba(224, 131, 72, 0.22);
+        border-color: rgba(255, 178, 87, 0.75);
+        outline: none;
+        transform: translateY(-1px);
+      }
+      .fw-button.is-primary {
+        color: #1b1116;
+        background: var(--ember);
+        border-color: var(--ember);
+        font-weight: 600;
+      }
+      .fw-button.is-primary:hover, .fw-button.is-primary:focus-visible {
+        background: #ffc87e;
+        border-color: #ffc87e;
+      }
+
+      .fw-keys {
+        list-style: none;
+        margin: 0.4rem 0 0;
+        padding: 0;
+        font-size: 0.66rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--dim);
+        line-height: 2.1;
+      }
+      .fw-keys b { color: var(--ink); font-weight: 500; }
+      .fw-keys span { opacity: 0.45; margin: 0 0.5rem; }
+
+      /* The settings panel is the one screen with any furniture in it. */
+      .fw-panel {
+        width: min(40rem, 100%);
+        text-align: left;
+        justify-items: stretch;
+        gap: 1.05rem;
+        padding: clamp(1.1rem, 3vw, 1.6rem);
+        border: 1px solid rgba(246, 227, 207, 0.16);
+        border-radius: 3px;
+        background: rgba(26, 14, 18, 0.72);
+        box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+      }
+      .fw-panel .fw-title { justify-self: center; }
+      .fw-group { display: grid; gap: 0.35rem; }
+      .fw-group h3 {
+        margin: 0 0 0.2rem;
+        font-size: 0.64rem;
+        letter-spacing: 0.3em;
+        text-transform: uppercase;
+        color: var(--ember);
+        border-bottom: 1px solid rgba(246, 227, 207, 0.14);
+        padding-bottom: 0.5rem;
+      }
+      .fw-row {
+        display: grid;
+        grid-template-columns: 1fr auto auto;
+        align-items: center;
+        gap: 0.9rem;
+        min-height: 2rem;
+      }
+      .fw-row label { font-size: 0.84rem; color: var(--ink); letter-spacing: 0.02em; }
+      .fw-row output {
+        font-size: 0.72rem;
+        letter-spacing: 0.12em;
+        color: var(--dim);
+        min-width: 3.2rem;
+        text-align: right;
+      }
+
+      .fw-row input[type='range'] {
+        appearance: none;
+        width: min(14rem, 44vw);
+        height: 2px;
+        background: rgba(246, 227, 207, 0.28);
+        border-radius: 2px;
+        cursor: pointer;
+      }
+      .fw-row input[type='range']::-webkit-slider-thumb {
+        appearance: none;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: var(--ember);
+        border: none;
+        cursor: pointer;
+      }
+      .fw-row input[type='range']::-moz-range-thumb {
+        width: 14px;
+        height: 14px;
+        border: none;
+        border-radius: 50%;
+        background: var(--ember);
+        cursor: pointer;
+      }
+      .fw-row input[type='range']:focus-visible { outline: 1px solid var(--ember); outline-offset: 6px; }
+
+      .fw-toggle, .fw-choice button {
+        appearance: none;
+        cursor: pointer;
+        font: inherit;
+        font-size: 0.68rem;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--dim);
+        padding: 0.38rem 0.8rem;
+        border: 1px solid rgba(246, 227, 207, 0.24);
+        border-radius: 2px;
+        background: transparent;
+        grid-column: 2 / -1;
+        justify-self: end;
+        transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
+      }
+      .fw-toggle[aria-checked='true'] {
+        color: #1b1116;
+        background: var(--ember);
+        border-color: var(--ember);
+      }
+      .fw-choice { display: flex; gap: 0.4rem; grid-column: 2 / -1; justify-self: end; }
+      .fw-choice button { grid-column: auto; justify-self: auto; }
+      .fw-choice button[aria-checked='true'] {
+        color: #1b1116;
+        background: var(--ember);
+        border-color: var(--ember);
+      }
+      .fw-toggle:focus-visible, .fw-choice button:focus-visible { outline: 1px solid var(--ember); outline-offset: 3px; }
+
+      .fw-panel .fw-buttons { justify-content: flex-end; }
+      .fw-panel .fw-note { grid-column: 1 / -1; }
+
+      body.fw-menu-open #fw-canvas { cursor: default; filter: saturate(0.85) brightness(0.9); }
+
+      #fw-fallback {
+        position: fixed;
+        inset: 0;
+        z-index: 9;
+        display: grid;
+        place-content: center;
+        text-align: center;
+        padding: 2rem;
+        background: #1b1116;
+        font-family: Georgia, 'Times New Roman', serif;
+        line-height: 1.6;
+      }
+      #fw-fallback h1 { letter-spacing: 0.2em; font-family: var(--face); font-weight: 500; }
+      #fw-fallback p { color: var(--dim); max-width: 34rem; }
+
+      @media (max-width: 720px) {
+        #fw-radio { left: 18px; bottom: 84px; max-width: 76vw; }
+        #fw-vitals { left: 18px; bottom: 18px; }
+        #fw-hint { display: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="fw-canvas"></canvas>
+    <div class="fw-grade"></div>
+
+    <div id="fw-compass" class="fw-hud" hidden>
+      <span id="fw-bearing">000°</span>
+      <div class="fw-rule"></div>
+      <span id="fw-sighted"></span>
+    </div>
+
+    <div id="fw-vitals" class="fw-hud" hidden>
+      <div class="fw-vital">
+        <span>Vigour</span>
+        <div class="fw-bar"><i id="fw-health" class="is-health"></i></div>
+      </div>
+      <div class="fw-vital">
+        <span>Wind</span>
+        <div class="fw-bar"><i id="fw-stamina" class="is-stamina"></i></div>
+      </div>
+    </div>
+
+    <div id="fw-flash"></div>
+
+    <div id="fw-prompt" class="fw-hud"></div>
+    <div id="fw-radio" class="fw-hud" aria-live="polite"></div>
+
+    <div id="fw-hint" class="fw-hud is-dim">
+      <div><b>W A S D</b> walk · <b>Shift</b> run · <b>Space</b> roll</div>
+      <div><b>Click</b> cut · <b>F</b> heavy · <b>Right-click</b> guard</div>
+      <div><b>E</b> climb · <b>R</b> radio · <b>Esc</b> pause</div>
+    </div>
+
+    <div id="fw-intro" class="fw-screen is-on">
+      <div class="fw-screen-inner">
+        <p class="fw-eyebrow">Lookout Four · North Ridge District</p>
+        <h1 class="fw-title">Fire Watch</h1>
+        <p class="fw-blurb">
+          Dusk in the pines. There is a ladder up the old watchtower, and something on the
+          north ridge.
+        </p>
+        <div class="fw-buttons">
+          <button id="fw-begin" class="fw-button is-primary" type="button">Begin the watch</button>
+          <button id="fw-intro-settings" class="fw-button" type="button">Settings</button>
+        </div>
+        <ul class="fw-keys">
+          <li><b>W A S D</b> walk<span>·</span><b>Shift</b> run<span>·</span><b>Space</b> roll</li>
+          <li><b>Click</b> cut<span>·</span><b>F</b> heavy<span>·</span><b>Right-click</b> guard</li>
+          <li><b>E</b> climb<span>·</span><b>R</b> radio<span>·</span><b>Esc</b> pause</li>
+        </ul>
+      </div>
+    </div>
+
+    <div id="fw-pause" class="fw-screen">
+      <div class="fw-screen-inner">
+        <p class="fw-eyebrow">The watch is holding</p>
+        <h2 class="fw-title is-small">Paused</h2>
+        <div class="fw-buttons">
+          <button id="fw-resume" class="fw-button is-primary" type="button">Resume</button>
+          <button id="fw-pause-settings" class="fw-button" type="button">Settings</button>
+          <button id="fw-quit" class="fw-button" type="button">Back to the title</button>
+        </div>
+        <p class="fw-note">Escape takes you back out to the deck.</p>
+      </div>
+    </div>
+
+    <div id="fw-settings" class="fw-screen">
+      <div class="fw-screen-inner fw-panel">
+        <h2 class="fw-title is-small">Settings</h2>
+
+        <section class="fw-group">
+          <h3>Looking around</h3>
+          <div class="fw-row">
+            <label for="fw-sensitivity">Mouse sensitivity</label>
+            <input id="fw-sensitivity" type="range" min="0.3" max="2.5" step="0.05" />
+            <output id="fw-sensitivity-value">1.00×</output>
+          </div>
+          <div class="fw-row">
+            <label for="fw-invert">Invert vertical look</label>
+            <button id="fw-invert" class="fw-toggle" type="button" role="switch" aria-checked="false">Off</button>
+          </div>
+          <div class="fw-row">
+            <label for="fw-fov">Field of view</label>
+            <input id="fw-fov" type="range" min="50" max="100" step="1" />
+            <output id="fw-fov-value">64°</output>
+          </div>
+          <div class="fw-row">
+            <label for="fw-bob">Head movement while walking</label>
+            <button id="fw-bob" class="fw-toggle" type="button" role="switch" aria-checked="true">On</button>
+          </div>
+        </section>
+
+        <section class="fw-group">
+          <h3>Picture</h3>
+          <div class="fw-row">
+            <label id="fw-quality-label">Detail</label>
+            <div id="fw-quality" class="fw-choice" role="radiogroup" aria-labelledby="fw-quality-label">
+              <button type="button" role="radio" data-quality="low" aria-checked="false">Low</button>
+              <button type="button" role="radio" data-quality="fair" aria-checked="false">Fair</button>
+              <button type="button" role="radio" data-quality="full" aria-checked="true">Full</button>
+            </div>
+          </div>
+          <div class="fw-row">
+            <label for="fw-bloom">Glow around the light</label>
+            <button id="fw-bloom" class="fw-toggle" type="button" role="switch" aria-checked="true">On</button>
+          </div>
+          <p class="fw-note">Lower detail thins the undergrowth and drops the glow. Try it if the
+            view is stuttering.</p>
+        </section>
+
+        <section class="fw-group">
+          <h3>Sound</h3>
+          <div class="fw-row">
+            <label for="fw-music">Music</label>
+            <input id="fw-music" type="range" min="0" max="1" step="0.01" />
+            <output id="fw-music-value">55%</output>
+          </div>
+          <div class="fw-row">
+            <label for="fw-ambience">Wind and wildlife</label>
+            <input id="fw-ambience" type="range" min="0" max="1" step="0.01" />
+            <output id="fw-ambience-value">70%</output>
+          </div>
+        </section>
+
+        <div class="fw-buttons">
+          <button id="fw-settings-back" class="fw-button is-primary" type="button">Back</button>
+          <button id="fw-reset" class="fw-button" type="button">Restore defaults</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="fw-fallback" hidden>
+      <h1>Fire Watch</h1>
+      <p data-reason>This demo needs WebGL, and the browser could not give it one.</p>
+    </div>
+
+    <noscript>
+      <div style="padding: 2rem; font-family: Georgia, serif">
+        <h1>Fire Watch</h1>
+        <p>This demo draws its forest in the browser. It needs JavaScript enabled.</p>
+      </div>
+    </noscript>
+
+    <script type="module" src="/src/firewatch/main.ts"></script>
+  </body>
+</html>

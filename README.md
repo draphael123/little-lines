@@ -138,6 +138,91 @@ what they return.
 
 ---
 
+## The lookout (a second demo)
+
+`firewatch.html` is a separate, self-contained demo that shares nothing with the railway but the
+build: **a dusk forest, a medieval watchtower you climb into, and a column of smoke on the far
+ridge.**
+
+```bash
+npm run dev          # then open http://localhost:5801/firewatch.html
+```
+
+| Input | Effect |
+| --- | --- |
+| `W` `A` `S` `D` | Walk (hold `Shift` to run) |
+| Mouse | Look — pointer lock, or drag if the browser refuses it |
+| `E` | Take the ladder, up or down |
+| `R` | Radio the smoke in, once you are up and facing it |
+| Left click | A light cut |
+| `F` / middle click | A heavy one |
+| Right click (hold) | Guard |
+| `Space` | Roll, in whatever direction you are holding |
+| `Esc` | Pause |
+
+There is a sword in your left hand and a quintain in the clearing to use it
+on: a shield on one end of a crossbar and a sandbag on the other. Hit the
+shield and the thing spins; the bag comes round behind it, and if you are
+still standing there when it arrives you take it across the shoulders. Guard
+and it costs you wind instead of blood; roll and it misses you entirely.
+Vigour and wind are the two bars in the corner — wind pays for every swing,
+every roll, every second of a raised guard and every step of a run, and a
+guard you cannot pay for falls.
+
+It opens on a title card with the camera circling the tower. Escape pauses,
+and both the title and the pause screen open the same settings: mouse
+sensitivity, inverted look, field of view, head movement, detail (which thins
+the undergrowth and drops the glow), and levels for the music and the
+ambience. Settings are kept in `localStorage` and read back defensively.
+
+The score and the ambience are synthesised in the browser like the railway's
+sound — see [AUDIO_CREDITS.md](AUDIO_CREDITS.md) — and the mix follows the
+player: wind rises as you climb, crickets stay on the ground, the brazier is
+only loud beside it.
+
+It is plain Three.js rather than React Three Fiber, and it fetches nothing: the sky is a shader,
+the ridges are noise turned into silhouettes, the wood and the grass are instanced, and the
+tower, the town and the maps on the table are all geometry and canvas textures generated at load.
+
+```
+src/firewatch/
+  lookout.ts    the rules: ground, woodland, the road, the ladder, bearings
+  noise.ts      one seeded value-noise field, shared by everything
+  scene.ts      sky, ridges, ground, road, wood, grass, smoke, light
+  tower.ts      the watchtower: stone base, timber cage, parapet, fittings
+  town.ts       the town in the valley, drawn as flat silhouettes past the fog
+  player.ts     walking, looking and the climb
+  wildlife.ts   deer, rabbits, birds, bats, a heron and the fireflies
+  props.ts      the pond, the stones, the ruin, the camp and the wayside
+  combat.ts     stances, timings, reach, and what wind and vigour pay for
+  sword.ts      the blade in your left hand, and the poses it moves through
+  quintain.ts   the training post, which hits back
+  audio.ts      the score and the ambience, synthesised
+  settings.ts   what the player chose, and how it is read back
+  menu.ts       the title card, the pause screen and the settings
+  main.ts       the loop, the bloom pass and the radio traffic
+```
+
+The same split as the railway: `lookout.ts` and `combat.ts` never import a renderer, so the
+ladder, the bearings, where the trees stand, every swing timing and the whole stamina economy
+are exercised headlessly in `lookout.test.ts` and `combat.test.ts`.
+
+Two things worth knowing:
+
+- **Anything past about three hundred metres ignores the fog.** At this fog density a ridge two
+  kilometres out is pure fog colour, so the ridges and the town carry their haze in flat colour
+  instead. That is also why the ridge tints are keyed to the fog colour: get them wrong and the
+  join between the fogged ground and the flat ridge shows as a step.
+- **The road is measured before it is read.** The centre line is a Catmull-Rom through
+  control points that are not evenly spaced, so reading it straight off the spline runs fast
+  down one stretch and slow down the next. It is arc-length sampled once at load, which is what
+  makes "two thirds of the way along" mean two thirds of the way along — for the texture, for
+  the signposts, and for keeping the wood off the verge.
+- **The deck stands above the canopy on purpose.** Trees shorten towards the clearing, so the
+  climb ends with a view over a bowl rather than into a wall of branches.
+
+---
+
 ## Accessibility
 
 - A **genuine WebGL fallback** replaces the canvas only when the browser cannot draw it, or if
