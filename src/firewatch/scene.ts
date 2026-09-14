@@ -622,7 +622,7 @@ function broadleafGeometry(slim: boolean): THREE.BufferGeometry {
   return merge(parts)
 }
 
-function buildWood(): { group: THREE.Group; count: number } {
+function buildWood(): { group: THREE.Group; understory: THREE.Group; count: number } {
   const trees = scatterWood()
   const group = new THREE.Group()
 
@@ -712,9 +712,10 @@ function buildWood(): { group: THREE.Group; count: number } {
     group.add(mesh)
   })
 
-  group.add(buildUnderstory())
+  const understory = buildUnderstory()
+  group.add(understory)
 
-  return { group, count: trees.length }
+  return { group, understory, count: trees.length }
 }
 
 /* ------------------------------------------------------------- understory */
@@ -1334,6 +1335,8 @@ function buildMotes(): THREE.Points {
 
 export interface World {
   finder: THREE.Group
+  /** How far from the player the undergrowth is drawn, in metres. */
+  setFoliageRange(metres: number): void
   update(elapsed: number, dt: number, watcher: THREE.Vector3): void
 }
 
@@ -1346,7 +1349,8 @@ export function buildWorld(scene: THREE.Scene): World {
   scene.add(buildGround())
   scene.add(buildRoad())
   scene.add(buildTrail())
-  scene.add(buildWood().group)
+  const wood = buildWood()
+  scene.add(wood.group)
   scene.add(buildHeroTree())
 
   const clearing = buildClearing()
@@ -1381,11 +1385,39 @@ export function buildWorld(scene: THREE.Scene): World {
   const motePositions = motes.geometry.attributes.position as THREE.BufferAttribute
   const moteBase = Float32Array.from(motePositions.array)
 
+  // The understory is bucketed by cell, so it can be dropped by distance when
+  // the picture setting asks for less of it.
+  let foliageRange = Infinity
+  const planted: Array<{ mesh: THREE.Object3D; at: THREE.Vector3 }> = []
+  wood.understory.children.forEach((mesh) => {
+    const sphere = (mesh as THREE.Mesh).geometry?.boundingSphere
+    const at = new THREE.Vector3()
+    if (mesh instanceof THREE.InstancedMesh) {
+      mesh.computeBoundingSphere()
+      at.copy(mesh.boundingSphere?.center ?? sphere?.center ?? at)
+    }
+    planted.push({ mesh, at })
+  })
+
   return {
     finder: tower.finder,
+    setFoliageRange(metres) {
+      foliageRange = metres
+      planted.forEach(({ mesh }) => {
+        mesh.visible = true
+      })
+    },
     update(elapsed, dt, watcher) {
       wind.value = elapsed
       eye.value.copy(watcher)
+
+      if (foliageRange !== Infinity) {
+        // A cell is forty metres across, so its own size is allowed for.
+        const reach = foliageRange + 30
+        planted.forEach(({ mesh, at }) => {
+          mesh.visible = Math.hypot(at.x - watcher.x, at.z - watcher.z) < reach
+        })
+      }
       props.update(elapsed)
       wildlife.update(elapsed, dt, watcher)
 

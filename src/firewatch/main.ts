@@ -1,18 +1,20 @@
 /**
- * The demo itself: a renderer, a loop, and the few lines of radio traffic
- * that give you something to do once you are up the tree.
+ * The demo itself: a renderer, a loop, three menus and the few lines of radio
+ * traffic that give you something to do once you are up the tower.
  */
 import * as THREE from 'three'
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
-import { buildWorld } from './scene'
+import { audioRunning, duck, listen, setLevels, startAudio } from './audio'
+import { DECK, SMOKE, TRUNK, bearingGap, bearingOf, readBearing } from './lookout'
+import { createMenu } from './menu'
 import { Player } from './player'
-import { SMOKE, bearingGap, bearingOf, readBearing } from './lookout'
+import { buildWorld } from './scene'
+import { QUALITY, type Settings } from './settings'
 
 const canvas = document.getElementById('fw-canvas') as HTMLCanvasElement | null
-const overlay = document.getElementById('fw-overlay')
 const prompt = document.getElementById('fw-prompt')
 const compass = document.getElementById('fw-compass')
 const bearingOut = document.getElementById('fw-bearing')
@@ -27,7 +29,7 @@ function fail(reason: string) {
     const why = fallback.querySelector('[data-reason]')
     if (why) why.textContent = reason
   }
-  if (overlay) overlay.hidden = true
+  document.querySelectorAll('.fw-screen').forEach((screen) => screen.classList.remove('is-on'))
 }
 
 if (!canvas) {
@@ -45,13 +47,10 @@ function start(surface: HTMLCanvasElement) {
     return
   }
 
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   renderer.setSize(window.innerWidth, window.innerHeight, false)
   renderer.outputColorSpace = THREE.SRGBColorSpace
   // Flat and graphic on purpose: tone mapping washes the dusk palette out.
   renderer.toneMapping = THREE.NoToneMapping
-
-  let begun = false
 
   const scene = new THREE.Scene()
   const camera = new THREE.PerspectiveCamera(64, window.innerWidth / window.innerHeight, 0.08, 4000)
@@ -60,7 +59,6 @@ function start(surface: HTMLCanvasElement) {
   // the way they do at dusk. Threshold is high: nothing else should glow.
   const composer = new EffectComposer(renderer)
   composer.addPass(new RenderPass(scene, camera))
-  // Half resolution: bloom is a blur, and nobody can tell.
   const bloom = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth / 2, window.innerHeight / 2),
     0.42,
@@ -69,48 +67,113 @@ function start(surface: HTMLCanvasElement) {
   )
   composer.addPass(bloom)
   composer.addPass(new OutputPass())
+
   const world = buildWorld(scene)
   const player = new Player(camera)
+  const brazier = new THREE.Vector3(TRUNK.x + DECK.halfX - 1.0, DECK.y + 1.1, TRUNK.z + DECK.minZ + 1.1)
 
-  /* ------------------------------------------------------------- input */
+  /* ----------------------------------------------------------- the menus */
 
-  const locked = () => document.pointerLockElement === surface
-  let dragging = false
+  type Mode = 'intro' | 'playing' | 'paused'
+  let mode: Mode = 'intro'
 
-  // Pointer lock is the good way to look around. Where it is refused — an
-  // iframe, a browser that will not grant it — dragging has to do the same
-  // job, so the demo never ends up with a camera you cannot turn.
-  surface.addEventListener('pointerdown', (event) => {
-    begun = true
-    if (overlay) overlay.classList.remove('is-open')
-    dragging = true
-    surface.setPointerCapture(event.pointerId)
-    if (!locked()) {
+  const lock = () => {
+    if (document.pointerLockElement !== surface) {
       const request = surface.requestPointerLock()
       if (request instanceof Promise) request.catch(() => {})
     }
+  }
+
+  const menu = createMenu({
+    onBegin() {
+      startAudio()
+      mode = 'playing'
+      menu.show('playing')
+      lock()
+    },
+    onResume() {
+      mode = 'playing'
+      menu.show('playing')
+      duck(false)
+      lock()
+    },
+    onQuit() {
+      mode = 'intro'
+      menu.show('intro')
+      player.reset()
+      duck(false)
+      if (document.pointerLockElement === surface) document.exitPointerLock()
+    },
+    onSettings(settings: Settings) {
+      apply(settings)
+    },
+  })
+
+  function pause() {
+    if (mode !== 'playing') return
+    mode = 'paused'
+    menu.show('paused')
+    player.relax()
+    duck(true)
+    if (document.pointerLockElement === surface) document.exitPointerLock()
+  }
+
+  function apply(settings: Settings) {
+    camera.fov = settings.fov
+    camera.updateProjectionMatrix()
+    player.sensitivity = settings.sensitivity
+    player.invertY = settings.invertY
+    player.headBob = settings.headBob
+
+    const quality = QUALITY[settings.quality]
+    const ratio = Math.min(window.devicePixelRatio, quality.pixelRatio)
+    renderer.setPixelRatio(ratio)
+    composer.setPixelRatio(ratio)
+    bloom.enabled = settings.bloom && quality.bloom
+    world.setFoliageRange(quality.foliage)
+
+    setLevels({ music: settings.music, ambience: settings.ambience })
+  }
+
+  /* ---------------------------------------------------------------- input */
+
+  let dragging = false
+  const locked = () => document.pointerLockElement === surface
+
+  surface.addEventListener('pointerdown', (event) => {
+    if (mode !== 'playing') return
+    dragging = true
+    surface.setPointerCapture(event.pointerId)
+    lock()
   })
   surface.addEventListener('pointerup', (event) => {
     dragging = false
     if (surface.hasPointerCapture(event.pointerId)) surface.releasePointerCapture(event.pointerId)
   })
 
+  // Losing the pointer is how Escape reaches us: the browser eats the key.
   document.addEventListener('pointerlockchange', () => {
-    if (locked()) begun = true
-    else player.relax()
-    if (overlay) overlay.classList.toggle('is-open', begun && !locked() && !dragging)
+    if (!locked() && mode === 'playing' && !dragging) pause()
   })
 
   document.addEventListener('pointermove', (event) => {
+    if (mode !== 'playing') return
+    // Pointer lock is the good way to look around. Where it is refused — an
+    // iframe, a browser that will not grant it — dragging has to do the same
+    // job, so the camera is never stuck.
     if (locked()) player.look(event.movementX, event.movementY)
     else if (dragging) player.look(event.movementX * 1.4, event.movementY * 1.4)
   })
 
   window.addEventListener('keydown', (event) => {
-    if (event.repeat) return
+    if (event.code === 'Escape') {
+      if (mode === 'playing') pause()
+      else back()
+      return
+    }
+    if (mode !== 'playing' || event.repeat) return
     if (event.code === 'KeyE' || event.code === 'Space') {
-      const did = player.interact()
-      if (did) event.preventDefault()
+      if (player.interact()) event.preventDefault()
       return
     }
     if (event.code === 'KeyR') {
@@ -120,7 +183,22 @@ function start(surface: HTMLCanvasElement) {
     player.press(event.code)
   })
   window.addEventListener('keyup', (event) => player.release(event.code))
-  window.addEventListener('blur', () => player.relax())
+  window.addEventListener('blur', () => {
+    player.relax()
+    pause()
+  })
+
+  /** Escape, from anywhere that is not the game: settings, then pause. */
+  function back() {
+    if (menu.screen === 'settings') {
+      menu.show(mode === 'paused' ? 'paused' : 'intro')
+    } else if (mode === 'paused') {
+      mode = 'playing'
+      menu.show('playing')
+      duck(false)
+      lock()
+    }
+  }
 
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight
@@ -129,7 +207,7 @@ function start(surface: HTMLCanvasElement) {
     composer.setSize(window.innerWidth, window.innerHeight)
   })
 
-  /* ------------------------------------------------------------- radio */
+  /* ----------------------------------------------------------------- radio */
 
   const script = [
     ['You', `Dispatch, Lookout Four. I've got a column up on the north ridge.`],
@@ -172,54 +250,66 @@ function start(surface: HTMLCanvasElement) {
     if (sighted) sighted.textContent = 'REPORTED'
   }
 
-  /* -------------------------------------------------------------- loop */
-
-  // A hook for driving the demo from a test harness. Opt in with ?debug, so
-  // an ordinary visit has nothing hanging off the window object.
-  const debug = { camera, player, scene, renderer, world, paused: false }
-  if (new URLSearchParams(window.location.search).has('debug')) {
-    ;(window as unknown as Record<string, unknown>).__fw = debug
-  }
+  /* ------------------------------------------------------------------ loop */
 
   const clock = new THREE.Clock()
   let elapsed = 0
 
+  const debug = { camera, player, scene, renderer, world, menu, audioRunning, paused: false }
+  if (new URLSearchParams(window.location.search).has('debug')) {
+    ;(window as unknown as Record<string, unknown>).__fw = debug
+  }
+
+  /** The title card's camera: a slow turn around the tower, above the wood. */
+  function circleTheTower(at: number) {
+    const angle = at * 0.055 + 2.2
+    const radius = 62 + Math.sin(at * 0.07) * 8
+    camera.position.set(
+      TRUNK.x + Math.cos(angle) * radius,
+      30 + Math.sin(at * 0.09) * 4,
+      TRUNK.z + Math.sin(angle) * radius,
+    )
+    camera.lookAt(TRUNK.x, DECK.y + 2.5, TRUNK.z)
+  }
+
   function frame() {
     const dt = Math.min(clock.getDelta(), 0.05)
-    elapsed += dt
 
-    if (debug.paused) {
-      composer.render()
-      requestAnimationFrame(frame)
-      return
+    if (mode === 'intro') {
+      elapsed += dt
+      circleTheTower(elapsed)
+      world.update(elapsed, dt, camera.position)
+    } else if (mode === 'playing' && !debug.paused) {
+      elapsed += dt
+      player.update(dt)
+      world.update(elapsed, dt, camera.position)
+      listen(camera.position.y, camera.position.distanceTo(brazier))
+    } else if (debug.paused) {
+      // Held still for a screenshot; the camera is being driven from outside.
     }
-    player.update(dt)
-    world.update(elapsed, dt, camera.position)
 
+    const playing = mode === 'playing'
     const onDeck = player.stance === 'deck'
     const bearing = bearingOf(player.facing)
     const gap = bearingGap(bearing, SMOKE.bearing)
 
-    // The fire finder follows your eye, the way you would swing it yourself.
-    if (onDeck) world.finder.rotation.y = player.facing + Math.PI / 2
+    // The sighting ring follows your eye, the way you would swing it yourself.
+    if (playing && onDeck) world.finder.rotation.y = player.facing + Math.PI / 2
 
-    if (compass) compass.hidden = !onDeck
-    if (onDeck && bearingOut) bearingOut.textContent = `${readBearing(bearing)}°`
-    if (onDeck && sighted && !radioing && line < 0) {
+    if (compass) compass.hidden = !(playing && onDeck)
+    if (playing && onDeck && bearingOut) bearingOut.textContent = `${readBearing(bearing)}°`
+    if (playing && onDeck && sighted && !radioing && line < 0) {
       sighted.textContent = gap < 14 ? 'SMOKE IN SIGHT — R TO RADIO IT IN' : ''
     }
 
     if (prompt) {
-      const offer = player.offer
-      let text = ''
-      if (offer === 'climb') text = 'E — climb the ladder'
-      else if (offer === 'descend') text = 'E — climb down'
-      else if (player.stance === 'climbing') text = ''
+      const offer = playing ? player.offer : null
+      const text = offer === 'climb' ? 'E — climb the ladder' : offer === 'descend' ? 'E — climb down' : ''
       prompt.textContent = text
-      prompt.classList.toggle('is-on', text !== '' && begun)
+      prompt.classList.toggle('is-on', text !== '')
     }
 
-    if (line >= 0 && elapsed >= nextLineAt) {
+    if (playing && line >= 0 && elapsed >= nextLineAt) {
       if (line < script.length) {
         const [who, text] = script[line]
         say(who, text)
@@ -232,7 +322,7 @@ function start(surface: HTMLCanvasElement) {
       }
     }
 
-    if (hint) hint.classList.toggle('is-dim', !begun)
+    if (hint) hint.classList.toggle('is-dim', !playing)
 
     composer.render()
     requestAnimationFrame(frame)

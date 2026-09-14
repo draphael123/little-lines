@@ -154,6 +154,18 @@ npm run dev          # then open http://localhost:5801/firewatch.html
 | Mouse | Look — pointer lock, or drag if the browser refuses it |
 | `E` | Take the ladder, up or down |
 | `R` | Radio the smoke in, once you are up and facing it |
+| `Esc` | Pause |
+
+It opens on a title card with the camera circling the tower. Escape pauses,
+and both the title and the pause screen open the same settings: mouse
+sensitivity, inverted look, field of view, head movement, detail (which thins
+the undergrowth and drops the glow), and levels for the music and the
+ambience. Settings are kept in `localStorage` and read back defensively.
+
+The score and the ambience are synthesised in the browser like the railway's
+sound — see [AUDIO_CREDITS.md](AUDIO_CREDITS.md) — and the mix follows the
+player: wind rises as you climb, crickets stay on the ground, the brazier is
+only loud beside it.
 
 It is plain Three.js rather than React Three Fiber, and it fetches nothing: the sky is a shader,
 the ridges are noise turned into silhouettes, the wood and the grass are instanced, and the
@@ -167,6 +179,11 @@ src/firewatch/
   tower.ts      the watchtower: stone base, timber cage, parapet, fittings
   town.ts       the town in the valley, drawn as flat silhouettes past the fog
   player.ts     walking, looking and the climb
+  wildlife.ts   deer, rabbits, birds, bats, a heron and the fireflies
+  props.ts      the pond, the stones, the ruin, the camp and the wayside
+  audio.ts      the score and the ambience, synthesised
+  settings.ts   what the player chose, and how it is read back
+  menu.ts       the title card, the pause screen and the settings
   main.ts       the loop, the bloom pass and the radio traffic
 ```
 

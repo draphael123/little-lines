@@ -26,16 +26,23 @@ const WALK = 3.2
 const RUN = 5.8
 const TURN = 0.0022
 
+const START = { x: 1.2, z: 30, yaw: 0, pitch: -0.02 }
+
 export class Player {
   readonly camera: THREE.PerspectiveCamera
   private climb: Climb = { stance: 'ground', t: 0 }
-  private yaw = 0
-  private pitch = -0.02
+  private yaw = START.yaw
+  private pitch = START.pitch
   private yawAtGrab = 0
   private readonly keys = new Set<string>()
-  private readonly position = new THREE.Vector3(1.2, 0, 30)
+  private readonly position = new THREE.Vector3(START.x, 0, START.z)
   private readonly velocity = new THREE.Vector3()
   private bob = 0
+
+  /** Set from the settings screen. */
+  sensitivity = 1
+  invertY = false
+  headBob = true
 
   constructor(camera: THREE.PerspectiveCamera) {
     this.camera = camera
@@ -53,8 +60,22 @@ export class Player {
 
   look(dx: number, dy: number) {
     if (this.moving()) return
-    this.yaw -= dx * TURN
-    this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - dy * TURN))
+    const turn = TURN * this.sensitivity
+    this.yaw -= dx * turn
+    const vertical = this.invertY ? -dy : dy
+    this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - vertical * turn))
+  }
+
+  /** Back to the trailhead, as if you had just walked up from the road. */
+  reset() {
+    this.climb = { stance: 'ground', t: 0 }
+    this.keys.clear()
+    this.velocity.set(0, 0, 0)
+    this.yaw = START.yaw
+    this.pitch = START.pitch
+    this.bob = 0
+    this.position.set(START.x, groundAt(START.x, START.z), START.z)
+    this.apply(this.position.y + EYE)
   }
 
   press(code: string) {
@@ -155,7 +176,7 @@ export class Player {
 
     const travelling = Math.hypot(this.velocity.x, this.velocity.z)
     this.bob += dt * travelling * (onDeck ? 1.6 : 2.1)
-    const sway = Math.sin(this.bob) * Math.min(0.055, travelling * 0.012)
+    const sway = this.headBob ? Math.sin(this.bob) * Math.min(0.055, travelling * 0.012) : 0
 
     const footing = onDeck ? DECK.y : groundAt(this.position.x, this.position.z)
     this.position.y = footing

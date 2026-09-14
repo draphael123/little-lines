@@ -63,3 +63,25 @@ For completeness, since they are the project's other media:
 - **Icons, favicon and social preview:** original vector work in `public/favicon.svg` and
   `scripts/make-images.mjs`, generated with [`@resvg/resvg-js`](https://github.com/yisibl/resvg-js)
   (MPL-2.0, a development dependency only — it is not shipped to the browser).
+
+---
+
+## Fire Watch (the lookout demo)
+
+The demo at `/firewatch.html` has its own score and ambience, in
+`src/firewatch/audio.ts`, written to the same rule: **nothing is fetched and
+there are no sample files.**
+
+| Layer | How it is made |
+| --- | --- |
+| Theme | A slow piece in D dorian. Each bar is a pad of four detuned oscillators through a lowpass, with a second pad a fifth above it every other bar. |
+| Motif | Three to five plucked triangle-wave notes from a six-note set, entering on alternate bars, starting at a different place in the set each time. |
+| Wind | Two loops of pink noise, one lowpassed to a rumble and one bandpassed to a hiss through needles, with a 0.07 Hz oscillator moving the gain. |
+| Crickets | Pink noise through a narrow 4.6 kHz bandpass. |
+| Brazier | Pink noise through a 1.1 kHz bandpass, audible only within a few metres of it. |
+| Air | A 2.6-second noise impulse response, shared by the music bus. |
+
+The mix follows the player: wind rises with height, crickets fade as you climb
+and the fire is only loud beside it. Music and ambience each have their own
+level in the settings screen, and every failure path is a silent no-op.
+
