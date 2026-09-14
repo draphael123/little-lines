@@ -8,7 +8,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import { audioRunning, duck, listen, setLevels, startAudio } from './audio'
-import { DECK, SMOKE, TRUNK, bearingGap, bearingOf, readBearing } from './lookout'
+import { DECK, EYE, SMOKE, TRUNK, bearingGap, bearingOf, groundAt, readBearing } from './lookout'
 import { createMenu } from './menu'
 import { Player } from './player'
 import { buildWorld } from './scene'
@@ -255,7 +255,7 @@ function start(surface: HTMLCanvasElement) {
   const clock = new THREE.Clock()
   let elapsed = 0
 
-  const debug = { camera, player, scene, renderer, world, menu, audioRunning, paused: false }
+  const debug = { camera, player, scene, renderer, world, menu, audioRunning, groundAt, eye: EYE, paused: false }
   if (new URLSearchParams(window.location.search).has('debug')) {
     ;(window as unknown as Record<string, unknown>).__fw = debug
   }
@@ -275,17 +275,17 @@ function start(surface: HTMLCanvasElement) {
   function frame() {
     const dt = Math.min(clock.getDelta(), 0.05)
 
-    if (mode === 'intro') {
+    if (debug.paused) {
+      // Held still for a screenshot; the camera is driven from outside.
+    } else if (mode === 'intro') {
       elapsed += dt
       circleTheTower(elapsed)
       world.update(elapsed, dt, camera.position)
-    } else if (mode === 'playing' && !debug.paused) {
+    } else if (mode === 'playing') {
       elapsed += dt
       player.update(dt)
       world.update(elapsed, dt, camera.position)
       listen(camera.position.y, camera.position.distanceTo(brazier))
-    } else if (debug.paused) {
-      // Held still for a screenshot; the camera is being driven from outside.
     }
 
     const playing = mode === 'playing'

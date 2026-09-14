@@ -4,7 +4,11 @@ import {
   ARRIVAL,
   CLEARING,
   CLIMB_SECONDS,
+  ROAD,
   SMOKE,
+  TOWN,
+  distanceToRoad,
+  roadPoint,
   DECK,
   EYE,
   LADDER_STAND,
@@ -153,6 +157,57 @@ describe('where you may stand', () => {
   it('turns you back at the edge of the wood', () => {
     const out = clampToGround(900, -900)
     expect(Math.hypot(out.x, out.z)).toBeCloseTo(WANDER, 5)
+  })
+})
+
+describe('the road', () => {
+  it('runs from off the map in the east to the town gate in the west', () => {
+    const east = roadPoint(0)
+    const gate = roadPoint(1)
+    expect(east.x).toBeGreaterThan(300)
+    expect(gate.x).toBeLessThan(-250)
+    const town = bearingToPoint(TOWN.bearing, TOWN.distance)
+    // The gate end is much nearer the town than the eastern end is.
+    expect(Math.hypot(gate.x - town.x, gate.z - town.z)).toBeLessThan(
+      Math.hypot(east.x - town.x, east.z - town.z) / 3,
+    )
+  })
+
+  it('is smooth: no step between samples is much longer than its neighbours', () => {
+    let longest = 0
+    let shortest = Infinity
+    for (let i = 0; i < 200; i++) {
+      const a = roadPoint(i / 200)
+      const b = roadPoint((i + 1) / 200)
+      const step = Math.hypot(b.x - a.x, b.z - a.z)
+      longest = Math.max(longest, step)
+      shortest = Math.min(shortest, step)
+    }
+    expect(longest).toBeLessThan(shortest * 4)
+  })
+
+  it('measures the distance to itself as nothing', () => {
+    for (const t of [0.1, 0.35, 0.6, 0.9]) {
+      const on = roadPoint(t)
+      expect(distanceToRoad(on.x, on.z)).toBeLessThan(0.6)
+    }
+    const off = roadPoint(0.5)
+    expect(distanceToRoad(off.x, off.z + 40)).toBeGreaterThan(30)
+  })
+
+  it('keeps the wood off the road', () => {
+    for (const tree of scatterWood(160, 9)) {
+      expect(distanceToRoad(tree.x, tree.z)).toBeGreaterThanOrEqual(ROAD.clear)
+    }
+  })
+})
+
+describe('the town shelf', () => {
+  it('raises the ground where the town stands, and leaves the wood alone', () => {
+    const town = bearingToPoint(TOWN.bearing, TOWN.distance)
+    expect(groundAt(town.x, town.z)).toBeCloseTo(9, 1)
+    // The clearing, two hundred metres away, is untouched by it.
+    expect(Math.abs(groundAt(0, 0))).toBeLessThan(0.01)
   })
 })
 

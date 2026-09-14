@@ -196,6 +196,11 @@ Two things worth knowing:
   kilometres out is pure fog colour, so the ridges and the town carry their haze in flat colour
   instead. That is also why the ridge tints are keyed to the fog colour: get them wrong and the
   join between the fogged ground and the flat ridge shows as a step.
+- **The road is measured before it is read.** The centre line is a Catmull-Rom through
+  control points that are not evenly spaced, so reading it straight off the spline runs fast
+  down one stretch and slow down the next. It is arc-length sampled once at load, which is what
+  makes "two thirds of the way along" mean two thirds of the way along — for the texture, for
+  the signposts, and for keeping the wood off the verge.
 - **The deck stands above the canopy on purpose.** Trees shorten towards the clearing, so the
   climb ends with a view over a bowl rather than into a wall of branches.
 

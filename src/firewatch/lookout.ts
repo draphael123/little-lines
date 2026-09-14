@@ -49,8 +49,8 @@ export const EYE = 1.68
 /** The clearing the trees keep out of, in metres from the trunk. */
 export const CLEARING = 13
 
-/** How far you can wander before the wood turns you back. */
-export const WANDER = 132
+/** How far you can wander before the country turns you back. */
+export const WANDER = 175
 
 /**
  * The handful of places worth walking to. Nothing grows on top of them, and
@@ -70,17 +70,97 @@ export const POND = { x: -54, z: 24, radius: 13.5, depth: 2.2 }
 export const TOWN_NAME = 'Ashvale'
 
 /** The wagon road that passes south of the wood, and the town it runs to. */
-export const ROAD = { halfWidth: 3.4, clear: 8.5, from: -340, to: 340 }
+export const ROAD = { halfWidth: 3.4, clear: 8.5 }
 export const TOWN = { bearing: 249, distance: 395 }
+
+/** How high the ground stands where the town is built. */
+export const TOWN_GROUND = 9
 
 /** Where the smoke is, as a compass bearing and a distance in metres. */
 export const SMOKE = { bearing: 42, distance: 1240 }
 
 /* ------------------------------------------------------------------- road */
 
-/** A point on the road's centre line. `t` runs roughly west to east. */
+/**
+ * The road's centre line: east off the map, past the foot of the wood, then
+ * away west to the town gate. `t` runs 0 at the eastern end to 1 at the gate.
+ */
+const ROAD_LINE: Array<[number, number]> = [
+  [400, 176],
+  [300, 132],
+  [200, 104],
+  [95, 91],
+  [0, 88],
+  [-95, 94],
+  [-180, 103],
+  [-250, 110],
+  [-300, 114],
+]
+
+/** Catmull-Rom through the control points, so the road has no kinks in it. */
+function splinePoint(u: number): { x: number; z: number } {
+  const clamped = Math.min(1, Math.max(0, u))
+  const span = ROAD_LINE.length - 1
+  const scaled = clamped * span
+  const i = Math.min(span - 1, Math.floor(scaled))
+  const f = scaled - i
+  const at = (index: number) => ROAD_LINE[Math.min(span, Math.max(0, index))]
+  const [x0, z0] = at(i - 1)
+  const [x1, z1] = at(i)
+  const [x2, z2] = at(i + 1)
+  const [x3, z3] = at(i + 2)
+  const spline = (a: number, b: number, c: number, d: number) =>
+    0.5 *
+    ((2 * b) + (-a + c) * f + (2 * a - 5 * b + 4 * c - d) * f * f + (-a + 3 * b - 3 * c + d) * f * f * f)
+  return { x: spline(x0, x1, x2, x3), z: spline(z0, z1, z2, z3) }
+}
+
+/**
+ * The control points are not evenly spaced, and a spline read straight off
+ * them runs fast down one stretch and slow down the next — which stretches
+ * the road's texture and makes "two thirds of the way along" mean nothing.
+ * So the curve is measured once and read back by distance instead.
+ */
+const ARC = (() => {
+  const samples = 600
+  const points: Array<{ x: number; z: number }> = []
+  const lengths: number[] = [0]
+  let total = 0
+  for (let i = 0; i <= samples; i++) {
+    const point = splinePoint(i / samples)
+    if (i > 0) {
+      const previous = points[i - 1]
+      total += Math.hypot(point.x - previous.x, point.z - previous.z)
+      lengths.push(total)
+    }
+    points.push(point)
+  }
+  return { points, lengths, total }
+})()
+
+/** A point on the road's centre line, `t` running 0 at the east end to 1 at the gate. */
 export function roadPoint(t: number): { x: number; z: number } {
-  return { x: t, z: 88 + Math.sin(t * 0.0072) * 38 + Math.cos(t * 0.019) * 6 }
+  const wanted = Math.min(1, Math.max(0, t)) * ARC.total
+  let low = 0
+  let high = ARC.lengths.length - 1
+  while (high - low > 1) {
+    const middle = (low + high) >> 1
+    if (ARC.lengths[middle] <= wanted) low = middle
+    else high = middle
+  }
+  const span = ARC.lengths[high] - ARC.lengths[low] || 1
+  const f = (wanted - ARC.lengths[low]) / span
+  const a = ARC.points[low]
+  const b = ARC.points[high]
+  return { x: a.x + (b.x - a.x) * f, z: a.z + (b.z - a.z) * f }
+}
+
+/** How long the road is, in metres. */
+export const ROAD_LENGTH = ARC.total
+
+/** Where the road meets the town's gate. */
+export function roadEnd(): { x: number; z: number } {
+  return roadPoint(1)
 }
 
 /**
@@ -90,7 +170,9 @@ export function roadPoint(t: number): { x: number; z: number } {
 export function distanceToRoad(x: number, z: number): number {
   let best = Infinity
   let bestT = 0
-  for (let t = ROAD.from; t <= ROAD.to; t += 10) {
+  const coarse = 80
+  for (let i = 0; i <= coarse; i++) {
+    const t = i / coarse
     const p = roadPoint(t)
     const d = (p.x - x) ** 2 + (p.z - z) ** 2
     if (d < best) {
@@ -98,7 +180,10 @@ export function distanceToRoad(x: number, z: number): number {
       bestT = t
     }
   }
-  for (let t = bestT - 10; t <= bestT + 10; t += 1) {
+  const step = 1 / coarse
+  for (let i = -10; i <= 10; i++) {
+    const t = bestT + (i * step) / 10
+    if (t < 0 || t > 1) continue
     const p = roadPoint(t)
     const d = (p.x - x) ** 2 + (p.z - z) ** 2
     if (d < best) best = d
@@ -129,7 +214,16 @@ export function groundAt(x: number, z: number): number {
   const toPond = Math.hypot(x - POND.x, z - POND.z) / POND.radius
   const bowl = Math.max(0, 1 - toPond * toPond)
 
-  return height * flatten * flatten - bowl * bowl * POND.depth
+  const shaped = height * flatten * flatten - bowl * bowl * POND.depth
+
+  // The shelf the town stands on. The country has to rise to meet it, or the
+  // road would run off the edge of the map and the town would float.
+  const town = bearingToPoint(TOWN.bearing, TOWN.distance)
+  const toTown = Math.hypot(x - town.x, z - town.z)
+  const shelf = 1 - Math.min(1, Math.max(0, (toTown - 130) / 150))
+  const eased = shelf * shelf * (3 - 2 * shelf)
+
+  return shaped * (1 - eased) + TOWN_GROUND * eased
 }
 
 /** How high the water stands. Everything below this line is in the pond. */

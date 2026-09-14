@@ -280,8 +280,8 @@ function litterTexture(): THREE.Texture {
 }
 
 function buildGround(): THREE.Mesh {
-  const size = 620
-  const segments = 150
+  const size = 760
+  const segments = 176
   const geometry = new THREE.PlaneGeometry(size, size, segments, segments)
   geometry.rotateX(-Math.PI / 2)
 
@@ -446,14 +446,14 @@ function roadTexture(): THREE.Texture {
 
 /** The wagon road along the foot of the wood, running west towards the town. */
 function buildRoad(): THREE.Mesh {
-  const steps = 160
+  const steps = 220
   const positions: number[] = []
   const uvs: number[] = []
   const indices: number[] = []
   for (let i = 0; i <= steps; i++) {
-    const t = ROAD.from + ((ROAD.to - ROAD.from) * i) / steps
+    const t = i / steps
     const here = roadPoint(t)
-    const ahead = roadPoint(t + 1)
+    const ahead = roadPoint(Math.min(1, t + 1 / steps))
     const dx = ahead.x - here.x
     const dz = ahead.z - here.z
     const length = Math.hypot(dx, dz) || 1

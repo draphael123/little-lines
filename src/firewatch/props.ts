@@ -9,7 +9,7 @@
  */
 import * as THREE from 'three'
 import { randoms } from './noise'
-import { LANDMARKS, POND, TOWN_NAME, groundAt, inPond, roadPoint, waterLevel } from './lookout'
+import { LANDMARKS, POND, ROAD, TOWN_NAME, groundAt, inPond, roadPoint, waterLevel } from './lookout'
 
 const colour = (hex: string) => new THREE.Color(hex)
 
@@ -348,83 +348,194 @@ function buildCamp(): THREE.Group {
 
 /* ------------------------------------------------------- cart and signpost */
 
-function signTexture(lines: string[]): THREE.Texture {
+function signTexture(text: string, arrow: 1 | -1): THREE.Texture {
   const canvas = document.createElement('canvas')
-  canvas.width = 256
+  canvas.width = 320
   canvas.height = 64
   const ctx = canvas.getContext('2d')
   if (ctx) {
     ctx.fillStyle = '#8a6a47'
-    ctx.fillRect(0, 0, 256, 64)
-    ctx.fillStyle = '#3a2a1c'
-    ctx.font = 'bold 30px Georgia, serif'
+    ctx.fillRect(0, 0, 320, 64)
+    // A darker grain, so the board is not a flat slab of colour.
+    for (let i = 0; i < 60; i++) {
+      ctx.strokeStyle = `rgba(90, 66, 42, ${0.1 + Math.random() * 0.18})`
+      ctx.lineWidth = 1 + Math.random() * 2
+      const y = Math.random() * 64
+      ctx.beginPath()
+      ctx.moveTo(0, y)
+      ctx.bezierCurveTo(90, y + 4, 200, y - 5, 320, y + 2)
+      ctx.stroke()
+    }
+
+    ctx.fillStyle = '#33241a'
+    ctx.font = 'bold 27px Georgia, serif'
     ctx.textBaseline = 'middle'
-    ctx.fillText(lines[0], 16, 34)
+    const inset = 26
+    ctx.fillText(text, arrow > 0 ? inset : inset + 34, 34)
+
+    // The pointing hand at the end the board points to.
+    const tip = arrow > 0 ? 306 : 14
+    const back = arrow > 0 ? 272 : 48
+    ctx.beginPath()
+    ctx.moveTo(tip, 32)
+    ctx.lineTo(back, 14)
+    ctx.lineTo(back, 50)
+    ctx.closePath()
+    ctx.fill()
   }
   const texture = new THREE.CanvasTexture(canvas)
   texture.colorSpace = THREE.SRGBColorSpace
   return texture
 }
 
-function buildWayside(): THREE.Group {
-  const group = new THREE.Group()
-  const wood = new THREE.MeshLambertMaterial({ color: colour('#6b4f36'), flatShading: true })
-  const iron = new THREE.MeshLambertMaterial({ color: colour('#3c3936'), flatShading: true })
+interface Signage {
+  timber: THREE.MeshLambertMaterial
+  iron: THREE.MeshLambertMaterial
+}
 
-  // The signpost where the trail meets the road.
-  const at = LANDMARKS.signpost
+/**
+ * A fingerpost: a post with one or two boards on it, each turned to point
+ * down the road it names. `heading` is the compass direction the board points
+ * in, as a yaw in radians.
+ */
+function fingerpost(
+  group: THREE.Group,
+  m: Signage,
+  at: { x: number; z: number },
+  boards: Array<{ text: string; heading: number; height: number }>,
+) {
   const ground = groundAt(at.x, at.z)
-  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 3.0, 7), wood)
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.13, 3.0, 7), m.timber)
   post.position.set(at.x, ground + 1.5, at.z)
   group.add(post)
 
-  const arms: Array<[string, number, number]> = [
-    [`${TOWN_NAME} 2 ml`, 2.55, -Math.PI / 2],
-    ['The Lookout', 2.1, Math.PI],
-  ]
-  arms.forEach(([text, y, spin]) => {
+  boards.forEach(({ text, heading, height }) => {
+    // Which end of the board the hand goes on, so it always points forwards.
     const board = new THREE.Mesh(
-      new THREE.BoxGeometry(1.7, 0.42, 0.06),
-      new THREE.MeshLambertMaterial({ map: signTexture([text]) }),
+      new THREE.BoxGeometry(1.9, 0.44, 0.06),
+      new THREE.MeshLambertMaterial({ map: signTexture(text, 1) }),
     )
-    board.position.set(at.x + Math.sin(spin) * 0.75, ground + y, at.z + Math.cos(spin) * 0.75)
-    board.rotation.y = spin + Math.PI / 2
+    board.position.set(
+      at.x + Math.sin(heading) * 0.78,
+      ground + height,
+      at.z + Math.cos(heading) * 0.78,
+    )
+    board.rotation.y = heading - Math.PI / 2
     group.add(board)
   })
-  const finial = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.3, 7), iron)
-  finial.position.set(at.x, ground + 3.1, at.z)
-  group.add(finial)
+
+  const cap = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.28, 7), m.iron)
+  cap.position.set(at.x, ground + 3.1, at.z)
+  group.add(cap)
+}
+
+/** A milestone, of the kind that outlasts the road it was cut for. */
+function milestone(group: THREE.Group, at: { x: number; z: number }, text: string) {
+  const ground = groundAt(at.x, at.z)
+  const canvas = document.createElement('canvas')
+  canvas.width = 128
+  canvas.height = 128
+  const ctx = canvas.getContext('2d')
+  if (ctx) {
+    ctx.fillStyle = '#8e8578'
+    ctx.fillRect(0, 0, 128, 128)
+    ctx.fillStyle = '#4a4238'
+    ctx.font = 'bold 34px Georgia, serif'
+    ctx.textAlign = 'center'
+    ctx.fillText(text, 64, 78)
+  }
+  const face = new THREE.CanvasTexture(canvas)
+  face.colorSpace = THREE.SRGBColorSpace
+  const stone = new THREE.Mesh(
+    new THREE.BoxGeometry(0.6, 0.8, 0.24),
+    new THREE.MeshLambertMaterial({ map: face }),
+  )
+  stone.position.set(at.x, ground + 0.35, at.z)
+  stone.rotation.y = 0.3
+  group.add(stone)
+}
+
+/** Where the road heads at a given point along it, as a yaw in radians. */
+function roadHeading(t: number): number {
+  const here = roadPoint(t)
+  const ahead = roadPoint(Math.min(1, t + 0.01))
+  return Math.atan2(ahead.x - here.x, ahead.z - here.z)
+}
+
+function buildWayside(): THREE.Group {
+  const group = new THREE.Group()
+  const m: Signage = {
+    timber: new THREE.MeshLambertMaterial({ color: colour('#6b4f36'), flatShading: true }),
+    iron: new THREE.MeshLambertMaterial({ color: colour('#3c3936'), flatShading: true }),
+  }
+
+  // The junction where the trail down from the tower meets the road: one arm
+  // for the town, one back up the hill.
+  const junction = LANDMARKS.signpost
+  const townward = roadHeading(0.52)
+  fingerpost(group, m, junction, [
+    { text: `${TOWN_NAME}  2`, heading: townward, height: 2.5 },
+    { text: 'The Lookout', heading: Math.PI, height: 2.05 },
+  ])
+
+  // Then the road marks itself the rest of the way in.
+  const along: Array<{ t: number; text: string }> = [
+    { t: 0.66, text: `${TOWN_NAME}  1` },
+    { t: 0.84, text: `${TOWN_NAME}  ½` },
+  ]
+  along.forEach(({ t, text }) => {
+    const at = roadPoint(t)
+    const heading = roadHeading(t)
+    const verge = {
+      x: at.x + Math.cos(heading) * (ROAD.halfWidth + 1.4),
+      z: at.z - Math.sin(heading) * (ROAD.halfWidth + 1.4),
+    }
+    fingerpost(group, m, verge, [{ text, heading, height: 2.4 }])
+  })
+
+  const stoneAt = roadPoint(0.75)
+  const stoneHeading = roadHeading(0.75)
+  milestone(
+    group,
+    {
+      x: stoneAt.x + Math.cos(stoneHeading) * (ROAD.halfWidth + 1.1),
+      z: stoneAt.z - Math.sin(stoneHeading) * (ROAD.halfWidth + 1.1),
+    },
+    '¾',
+  )
 
   // A cart left on the verge, with its load half unpacked.
-  const cartAt = LANDMARKS.cart
-  const on = roadPoint(cartAt.x)
+  const on = roadPoint(0.4)
   const cartGround = groundAt(on.x, on.z + 4.5)
   const cart = new THREE.Group()
-  const bed = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.22, 1.5), wood)
+  const bed = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.22, 1.5), m.timber)
   bed.position.y = 0.85
   cart.add(bed)
   for (const side of [-1, 1]) {
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.45, 0.1), wood)
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.45, 0.1), m.timber)
     rail.position.set(0, 1.13, side * 0.7)
     cart.add(rail)
   }
   for (const side of [-1, 1]) {
-    const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.09, 6, 14), wood)
+    const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.09, 6, 14), m.timber)
     wheel.position.set(-0.4, 0.62, side * 0.85)
     cart.add(wheel)
     for (let i = 0; i < 6; i++) {
-      const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.2, 0.05), wood)
+      const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.2, 0.05), m.timber)
       spoke.position.set(-0.4, 0.62, side * 0.85)
       spoke.rotation.z = (i / 6) * Math.PI
       cart.add(spoke)
     }
   }
-  const shaft = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.09, 0.09), wood)
+  const shaft = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.09, 0.09), m.timber)
   shaft.position.set(2.1, 0.7, 0)
   shaft.rotation.z = -0.18
   cart.add(shaft)
   for (let i = 0; i < 5; i++) {
-    const billet = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 1.3, 6), new THREE.MeshLambertMaterial({ color: colour('#4e3b2b'), flatShading: true }))
+    const billet = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.13, 0.13, 1.3, 6),
+      new THREE.MeshLambertMaterial({ color: colour('#4e3b2b'), flatShading: true }),
+    )
     billet.rotation.x = Math.PI / 2
     billet.position.set(-0.6 + (i % 3) * 0.32, 1.05 + Math.floor(i / 3) * 0.26, 0)
     cart.add(billet)
